@@ -79,13 +79,17 @@ export default function App() {
     };
   }, []);
 
-  // 안내 화면 및 진입 시 사전 로딩 보장
+  // 화면 이동 시 오디오 및 상태 제어
   useEffect(() => {
     if ((activeView === 'game_guide' || activeView === 'game_register') && audioRef.current) {
       audioRef.current.load();
     }
     if (activeView !== 'game_play' && audioRef.current) {
       audioRef.current.pause();
+    }
+    if (activeView === 'game_play') {
+      setTime(0);
+      setIsRunning(false);
     }
   }, [activeView]);
 
@@ -239,7 +243,7 @@ export default function App() {
     };
   }, []);
 
-  // 타이머 투명도 계산 (동일한 속도로 선형 투명해지며, 시작 후 정확히 1.0초에 completely fade out)
+  // 타이머 투명도 계산 (동일한 속도로 선형 투명해지며, 시작 후 정확히 1.0초에 완전히 사라짐)
   const getTimerOpacity = () => {
     if (!isRunning) return 1;
     if (time >= 1.0) return 0;
@@ -344,7 +348,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8fafd] text-slate-800">
-      {/* 헤더 (모바일 가로깨짐 방지 및 반응형 레이아웃 개선) */}
+      {/* 헤더 */}
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-4 sm:px-6 py-3 sm:py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5 sm:gap-3 cursor-pointer shrink-0" onClick={() => setActiveView('main')}>
@@ -591,7 +595,7 @@ export default function App() {
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">2. 시작 및 정지</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      시작 버튼을 누르면 타이머가 동작합니다. 마음속으로 초를 세어 <b>10초에 가장 가까울 때</b> 정지 버튼을 누르세요.
+                      다음 화면에서 시작 버튼을 누르면 타이머가 동작합니다. 마음속으로 초를 세어 <b>10초에 가장 가까울 때</b> 정지 버튼을 누르세요.
                     </p>
                   </div>
                 </div>
@@ -601,21 +605,21 @@ export default function App() {
                 </div>
               </div>
 
+              {/* 게임 화면으로만 이동 (타이머 자동 시작 안함) */}
               <button
                 onClick={() => {
                   setActiveView('game_play');
-                  startGame();
                 }}
                 className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                <Play size={18} />
-                <span>테스트 시작하기</span>
+                <span>테스트 화면으로 이동</span>
+                <ArrowRight size={18} />
               </button>
             </div>
           </div>
         )}
 
-        {/* 5. 타이머 게임 진행 화면 (1초 만에 일정한 속도로 완전히 사라지도록 설정) */}
+        {/* 5. 타이머 게임 진행 화면 */}
         {activeView === 'game_play' && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -636,7 +640,7 @@ export default function App() {
               </div>
 
               <p className="text-xs text-slate-400 mb-8">
-                {isRunning ? (time < 1.0 ? '숫자가 사라지는 중...' : '감각으로 10초를 맞추세요!') : '시작 버튼을 누르세요'}
+                {isRunning ? (time < 1.0 ? '숫자가 사라지는 중...' : '감각으로 10초를 맞추세요!') : '준비되면 아래 시작 버튼을 누르세요'}
               </p>
 
               {isRunning ? (
@@ -660,7 +664,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 6. 미니게임 결과 및 평가 화면 */}
+        {/* 6. 미니게임 결과 및 평가 화면 (0초~12초 범위 표시 바 추가) */}
         {activeView === 'game_result' && gameResult && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -671,16 +675,89 @@ export default function App() {
               <h2 className="text-2xl font-bold text-slate-900 mb-1">도전 결과</h2>
               <p className="text-xs text-slate-500 mb-6">{participantId} {participantName} 학생의 기록입니다.</p>
 
+              {/* 기록 디스플레이 */}
               <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-6">
                 <div className="text-xs text-slate-400 mb-1">최종 기록</div>
                 <div className="text-5xl font-black text-slate-900 font-mono mb-2">
                   {formatDisplayTime(gameResult.stoppedTime)}초
                 </div>
-                <div className="text-xs font-semibold text-slate-500">
+                <div className="text-xs font-semibold text-slate-500 mb-6">
                   목표(10.00초)와 오차: <span className="text-[#1a73e8]">{gameResult.diff}초</span>
+                </div>
+
+                {/* 0초 ~ 12초 시각적 트랙 바 */}
+                <div className="mt-4 pt-4 border-t border-slate-200/60 text-left">
+                  <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500 mb-2">
+                    <span>타임라인 분석 (0초 ~ 12초)</span>
+                    <span className="text-xs text-[#1a73e8]">
+                      {gameResult.stoppedTime >= 12 ? '12.00s+' : `${formatDisplayTime(gameResult.stoppedTime)}초`}
+                    </span>
+                  </div>
+
+                  <div className="relative w-full h-7 bg-slate-200 rounded-xl overflow-hidden my-2 border border-slate-300/50">
+                    {/* 근접 구간 영역 (9.75초 ~ 10.25초 -> 81.25% ~ 85.42%) */}
+                    <div
+                      className="absolute top-0 bottom-0 bg-blue-300"
+                      style={{ left: '81.25%', width: '4.17%' }}
+                      title="근접 구간 (±0.25초)"
+                    ></div>
+
+                    {/* 초근접 구간 영역 (9.95초 ~ 10.05초 -> 82.92% ~ 83.75%) */}
+                    <div
+                      className="absolute top-0 bottom-0 bg-emerald-400"
+                      style={{ left: '82.92%', width: '0.83%' }}
+                      title="초근접 구간 (±0.05초)"
+                    ></div>
+
+                    {/* 완벽 목표선 (10.00초 -> 83.33%) */}
+                    <div
+                      className="absolute top-0 bottom-0 w-1 bg-amber-500 z-10"
+                      style={{ left: '83.33%' }}
+                      title="완벽 목표점 (10.00초)"
+                    ></div>
+
+                    {/* 사용자 누른 지점 핀 마커 */}
+                    <div
+                      className="absolute top-0 bottom-0 w-2 bg-red-600 rounded-full z-20 shadow-md transform -translate-x-1/2 transition-all duration-500"
+                      style={{
+                        left: `${Math.min((gameResult.stoppedTime / 12) * 100, 100)}%`
+                      }}
+                    ></div>
+                  </div>
+
+                  {/* 눈금 라벨 */}
+                  <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
+                    <span>0s</span>
+                    <span>3s</span>
+                    <span>6s</span>
+                    <span>9s</span>
+                    <span className="font-bold text-amber-600">10s🎯</span>
+                    <span>12s+</span>
+                  </div>
+
+                  {/* 범례 안내 */}
+                  <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-slate-500">
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-blue-300 inline-block"></span>
+                      <span>근접</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                      <span>초근접</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
+                      <span>10.00s 완벽</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-red-600 inline-block"></span>
+                      <span>내 기록</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
+              {/* 등급 판정 박스 */}
               <div className={`p-5 rounded-2xl border mb-6 ${
                 gameResult.rank === '완벽'
                   ? 'bg-amber-50 border-amber-200 text-amber-900'
