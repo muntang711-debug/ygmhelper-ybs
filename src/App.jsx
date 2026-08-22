@@ -64,10 +64,13 @@ export default function App() {
   const startTimeRef = useRef(null);
   const audioRef = useRef(null);
 
-  // 컴포넌트 마운트 시 오디오 객체 생성
+  // 컴포넌트 마운트 시 오디오 사전 로딩 설정
   useEffect(() => {
-    audioRef.current = new Audio('/10sTimer.mp3');
-    audioRef.current.loop = true;
+    const audio = new Audio('/10sTimer.mp3');
+    audio.preload = 'auto';
+    audio.loop = true;
+    audio.load(); // 사전 로딩 트리거
+    audioRef.current = audio;
 
     return () => {
       if (audioRef.current) {
@@ -75,6 +78,16 @@ export default function App() {
       }
     };
   }, []);
+
+  // 안내 화면(game_guide) 및 게임 화면 진입 시 사전 로딩 보장
+  useEffect(() => {
+    if ((activeView === 'game_guide' || activeView === 'game_register') && audioRef.current) {
+      audioRef.current.load();
+    }
+    if (activeView !== 'game_play' && audioRef.current) {
+      audioRef.current.pause();
+    }
+  }, [activeView]);
 
   // 학년 변경 시 입력값 초기화
   const handleGradeChange = (e) => {
@@ -136,7 +149,7 @@ export default function App() {
     setActiveView('game_guide');
   };
 
-  // 타이머 시작 (랜덤 시간 구간 음악 재생)
+  // 타이머 시작 (0초 ~ 165초 사이 무작위 위치에서 확실히 재생)
   const startGame = () => {
     setTime(0);
     setStoppedTime(null);
@@ -144,13 +157,29 @@ export default function App() {
     setIsRunning(true);
     startTimeRef.current = Date.now();
 
-    // 0초부터 165초(2분 45초) 사이 무작위 시작 시간 설정
     if (audioRef.current) {
+      // 0초부터 165초(2분 45초) 사이의 랜덤 시간 설정
       const randomStart = Math.random() * 165;
-      audioRef.current.currentTime = randomStart;
-      audioRef.current.play().catch(() => {
-        console.log('오디오 자동 재생이 차단되었습니다.');
-      });
+      
+      try {
+        audioRef.current.currentTime = randomStart;
+      } catch (e) {
+        console.log('초기 위치 설정 예외:', e);
+      }
+
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            // 재생 시작 후에도 재생 위치 재보정하여 0초 리셋 방지
+            if (audioRef.current) {
+              audioRef.current.currentTime = randomStart;
+            }
+          })
+          .catch((err) => {
+            console.log('오디오 자동 재생 제한:', err);
+          });
+      }
     }
 
     timerRef.current = setInterval(() => {
@@ -202,7 +231,7 @@ export default function App() {
     setActiveView('game_result');
   };
 
-  // 타이머 정리 및 음악 정지
+  // 타이머 정리
   useEffect(() => {
     return () => {
       clearInterval(timerRef.current);
@@ -211,13 +240,6 @@ export default function App() {
       }
     };
   }, []);
-
-  // 화면이 바뀔 때 음악 정지
-  useEffect(() => {
-    if (activeView !== 'game_play' && audioRef.current) {
-      audioRef.current.pause();
-    }
-  }, [activeView]);
 
   // 타이머 투명도 계산 (0~3초 페이드아웃, 3초 이상 보이지 않음)
   const getTimerOpacity = () => {
@@ -534,7 +556,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 4. 미니게임 진행 안내 화면 */}
+        {/* 4. 미니게임 진행 안내 화면 (오디오 사전 로딩 완료 단계) */}
         {activeView === 'game_guide' && (
           <div className="max-w-lg mx-auto">
             <button
