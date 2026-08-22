@@ -119,7 +119,7 @@ export default function App() {
   // 학년 변경 시 입력값 초기화
   const handleGradeChange = (e) => {
     setGrade(e.target.value);
-    setError('');
+    if (error) setError('');
   };
 
   // 관리자 여부 확인 함수
@@ -129,29 +129,21 @@ export default function App() {
     );
   };
 
-  // 인증 제출 처리
+  // 인증 제출 처리 (보안 강화를 위해 에러 세부 원인 숨김)
   const handleAuth = (e) => {
     e.preventDefault();
 
-    if (!grade) {
-      setError('학년을 선택해 주세요.');
-      return;
-    }
-
     const trimmedName = name.trim();
-    if (!trimmedName) {
-      setError('이름을 입력해 주세요.');
-      return;
-    }
-
     const validNames = STUDENT_DATA[grade] || [];
-    if (!validNames.includes(trimmedName)) {
-      setError('선택한 학년에 입력하신 이름의 부원이 없습니다.');
-      return;
-    }
 
-    if (inputCode.trim() !== 'ybs2026') {
-      setError('올바른 인증 코드가 아닙니다.');
+    // 어떤 항목이라도 올바르지 않으면 동일한 보안 에러 메시지 출력
+    if (
+      !grade ||
+      !trimmedName ||
+      !validNames.includes(trimmedName) ||
+      inputCode.trim() !== 'ybs2026'
+    ) {
+      setError('인증 정보가 올바르지 않습니다.');
       return;
     }
 
@@ -267,7 +259,7 @@ export default function App() {
     };
   }, []);
 
-  // 타이머 투명도 계산 (1초 후 완전히 사라짐)
+  // 타이머 투명도 계산
   const getTimerOpacity = () => {
     if (!isRunning) return 1;
     if (time >= 1.0) return 0;
@@ -525,7 +517,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. 학생 등록 화면 (개수 정보 텍스트 삭제) */}
+        {/* 3. 학생 등록 화면 */}
         {activeView === 'game_register' && (
           <div className="max-w-md mx-auto">
             <button
@@ -819,7 +811,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 7. NEW: 제기차기 시작 전 안내 화면 */}
+        {/* 7. 제기차기 시작 전 안내 화면 */}
         {activeView === 'jegi_guide' && (
           <div className="max-w-lg mx-auto">
             <button
@@ -856,7 +848,7 @@ export default function App() {
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">2. 개수 입력</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      도전이 완료되면 방원이 측정한 개수를 다음 화면의 카운터로 입력하세요.
+                      도전이 완료되면 부원이 측정한 개수를 다음 화면의 카운터로 입력하세요.
                     </p>
                   </div>
                 </div>
