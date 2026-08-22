@@ -1,19 +1,58 @@
 import React, { useState } from 'react';
-import { Lock, Radio, KeyRound, Sparkles, ShieldAlert } from 'lucide-react';
+import { Lock, Radio, KeyRound, Sparkles, ShieldAlert, Eye, EyeOff, User, GraduationCap } from 'lucide-react';
+
+// 방송부 부원 명단 데이터
+const STUDENT_DATA = {
+  '1': ['조민욱', '김담영', '백승준', '옥지윤', '임하늘'],
+  '2': ['이상혁', '안지환', '김아린', '한유정', '조민서'],
+  '3': ['김동건', '최승아', '김지민', '박현준'],
+};
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [grade, setGrade] = useState('');
+  const [name, setName] = useState('');
   const [inputCode, setInputCode] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userSession, setUserSession] = useState(null);
   const [error, setError] = useState('');
 
+  // 학년 변경 시 선택된 이름 초기화
+  const handleGradeChange = (e) => {
+    setGrade(e.target.value);
+    setName('');
+    setError('');
+  };
+
+  // 인증 제출 처리
   const handleAuth = (e) => {
     e.preventDefault();
-    if (inputCode.trim() === 'ybs2026') {
-      setIsAuthenticated(true);
-      setError('');
-    } else {
-      setError('올바른 인증 코드가 아닙니다.');
+
+    if (!grade) {
+      setError('학년을 선택해 주세요.');
+      return;
     }
+
+    if (!name.trim()) {
+      setError('이름을 선택해 주세요.');
+      return;
+    }
+
+    const validNames = STUDENT_DATA[grade] || [];
+    if (!validNames.includes(name.trim())) {
+      setError(`${grade}학년에 등록되지 않은 부원 이름입니다.`);
+      return;
+    }
+
+    if (inputCode.trim() !== 'ybs2026') {
+      setError('올바른 인증 코드가 아닙니다.');
+      return;
+    }
+
+    // 모든 인증 성공
+    setIsAuthenticated(true);
+    setUserSession({ grade, name: name.trim() });
+    setError('');
   };
 
   if (!isAuthenticated) {
@@ -25,36 +64,92 @@ export default function App() {
               <Radio size={28} />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">YBS Helper</h1>
-            <p className="text-sm text-slate-500 mt-1">방송부 전용 서비스 접근을 위해 인증 코드를 입력하세요.</p>
+            <p className="text-sm text-slate-500 mt-1">방송부 부원 인증 후 서비스에 접근할 수 있습니다.</p>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-4">
+            {/* 학년 선택 */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">학년</label>
+              <div className="relative">
+                <select
+                  value={grade}
+                  onChange={handleGradeChange}
+                  className="w-full px-4 py-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/20 focus:border-[#1a73e8] transition-all text-sm appearance-none cursor-pointer text-slate-800"
+                >
+                  <option value="">학년을 선택하세요</option>
+                  <option value="1">1학년</option>
+                  <option value="2">2학년</option>
+                  <option value="3">3학년</option>
+                </select>
+                <GraduationCap className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
+              </div>
+            </div>
+
+            {/* 이름 선택 */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">이름</label>
+              <div className="relative">
+                <select
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (error) setError('');
+                  }}
+                  disabled={!grade}
+                  className="w-full px-4 py-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/20 focus:border-[#1a73e8] transition-all text-sm appearance-none cursor-pointer text-slate-800 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                >
+                  <option value="">
+                    {grade ? `${grade}학년 부원 선택` : '학년을 먼저 선택하세요'}
+                  </option>
+                  {grade &&
+                    STUDENT_DATA[grade].map((studentName) => (
+                      <option key={studentName} value={studentName}>
+                        {studentName}
+                      </option>
+                    ))}
+                </select>
+                <User className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
+              </div>
+            </div>
+
+            {/* 인증 코드 (비밀번호 보기/숨김 토글) */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">인증 코드</label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={inputCode}
                   onChange={(e) => {
                     setInputCode(e.target.value);
                     if (error) setError('');
                   }}
                   placeholder="인증 코드를 입력하세요"
-                  className="w-full px-4 py-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/20 focus:border-[#1a73e8] transition-all text-sm"
+                  className="w-full px-4 py-3.5 pl-11 pr-11 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/20 focus:border-[#1a73e8] transition-all text-sm"
                 />
-                <KeyRound className="absolute left-3.5 top-3.5 text-slate-400" size={18} />
+                <KeyRound className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none"
+                  aria-label="인증 코드 보기 토글"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
-              {error && (
-                <div className="flex items-center gap-1.5 mt-2 text-xs text-red-500 ml-1">
-                  <ShieldAlert size={14} />
-                  <span>{error}</span>
-                </div>
-              )}
             </div>
+
+            {/* 에러 메시지 */}
+            {error && (
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-red-500 ml-1">
+                <ShieldAlert size={14} />
+                <span>{error}</span>
+              </div>
+            )}
 
             <button
               type="submit"
-              className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm"
+              className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm mt-2"
             >
               인증하기
             </button>
@@ -77,9 +172,14 @@ export default function App() {
               <span className="text-xs text-slate-400 font-medium">ybs.ygmhelper.xyz</span>
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full text-xs font-medium text-slate-600">
-            <Sparkles size={14} className="text-amber-500" />
-            <span>방송부 전용</span>
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full font-medium">
+              {userSession?.grade}학년 {userSession?.name}
+            </div>
+            <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-full text-xs font-medium text-[#1a73e8]">
+              <Sparkles size={14} className="text-amber-500" />
+              <span>방송부 전용</span>
+            </div>
           </div>
         </div>
       </header>
