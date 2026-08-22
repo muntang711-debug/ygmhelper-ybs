@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, Radio, KeyRound, Sparkles, ShieldAlert, Eye, EyeOff, User, GraduationCap } from 'lucide-react';
 
-// 방송부 부원 명단 데이터
+// 방송부 부원 명단 데이터 (검증용)
 const STUDENT_DATA = {
   '1': ['조민욱', '김담영', '백승준', '옥지윤', '임하늘'],
   '2': ['이상혁', '안지환', '김아린', '한유정', '조민서'],
@@ -17,10 +17,9 @@ export default function App() {
   const [userSession, setUserSession] = useState(null);
   const [error, setError] = useState('');
 
-  // 학년 변경 시 선택된 이름 초기화
+  // 학년 변경 시 입력값 초기화
   const handleGradeChange = (e) => {
     setGrade(e.target.value);
-    setName('');
     setError('');
   };
 
@@ -33,14 +32,15 @@ export default function App() {
       return;
     }
 
-    if (!name.trim()) {
-      setError('이름을 선택해 주세요.');
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError('이름을 입력해 주세요.');
       return;
     }
 
     const validNames = STUDENT_DATA[grade] || [];
-    if (!validNames.includes(name.trim())) {
-      setError(`${grade}학년에 등록되지 않은 부원 이름입니다.`);
+    if (!validNames.includes(trimmedName)) {
+      setError('선택한 학년에 입력하신 이름의 부원이 없습니다.');
       return;
     }
 
@@ -49,9 +49,9 @@ export default function App() {
       return;
     }
 
-    // 모든 인증 성공
+    // 모든 검증 통과시 인증 성공
     setIsAuthenticated(true);
-    setUserSession({ grade, name: name.trim() });
+    setUserSession({ grade, name: trimmedName });
     setError('');
   };
 
@@ -64,7 +64,7 @@ export default function App() {
               <Radio size={28} />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">YBS Helper</h1>
-            <p className="text-sm text-slate-500 mt-1">방송부 부원 인증 후 서비스에 접근할 수 있습니다.</p>
+            <p className="text-sm text-slate-500 mt-1">방송부 부원 신원 확인 후 서비스에 접근할 수 있습니다.</p>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-4">
@@ -86,34 +86,25 @@ export default function App() {
               </div>
             </div>
 
-            {/* 이름 선택 */}
+            {/* 이름 텍스트 입력 */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">이름</label>
               <div className="relative">
-                <select
+                <input
+                  type="text"
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
                     if (error) setError('');
                   }}
-                  disabled={!grade}
-                  className="w-full px-4 py-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/20 focus:border-[#1a73e8] transition-all text-sm appearance-none cursor-pointer text-slate-800 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                >
-                  <option value="">
-                    {grade ? `${grade}학년 부원 선택` : '학년을 먼저 선택하세요'}
-                  </option>
-                  {grade &&
-                    STUDENT_DATA[grade].map((studentName) => (
-                      <option key={studentName} value={studentName}>
-                        {studentName}
-                      </option>
-                    ))}
-                </select>
+                  placeholder="이름을 입력하세요"
+                  className="w-full px-4 py-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/20 focus:border-[#1a73e8] transition-all text-sm text-slate-800"
+                />
                 <User className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
               </div>
             </div>
 
-            {/* 인증 코드 (비밀번호 보기/숨김 토글) */}
+            {/* 인증 코드 (눈 모양 토글) */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">인증 코드</label>
               <div className="relative">
