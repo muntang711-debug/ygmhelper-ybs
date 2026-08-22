@@ -25,11 +25,12 @@ import {
   Minus,
   Activity,
   Target,
-  Mic,
   CheckCircle2,
   XCircle,
   MessageSquare,
-  HelpCircle
+  HelpCircle,
+  Check,
+  X
 } from 'lucide-react';
 
 // 방송부 부원 명단 데이터 (검증용)
@@ -56,55 +57,10 @@ const PRON_SENTENCES = [
   '서울특별시 특허허가과 허가과장 허 과장',
 ];
 
-// 사자성어 이어말하기 데이터베이스 (음성 오인식 보정 단어 목록 variants 및 '사자/성어' 추가)
+// 사자성어 이어말하기 데이터베이스 (추후 단어 추가 가능)
 const FOUR_LETTER_IDIOMS = [
-  { front: '사자', back: '성어', full: '사자성어', variants: ['성어', '성어다', '성어'] },
-  { front: '동문', back: '서답', full: '동문서답', variants: ['서답', '스탑', 'stop', '서 답', '소답', '서다'] },
-  { front: '고진', back: '감래', full: '고진감래', variants: ['감래', '감내', '가네', '감래다'] },
-  { front: '초지', back: '일관', full: '초지일관', variants: ['일관', '일과', '일관이다'] },
-  { front: '유명', back: '무실', full: '유명무실', variants: ['무실', '무시', '무실이다'] },
-  { front: '대기', back: '만성', full: '대기만성', variants: ['만성', '망성', '만성이다'] },
-  { front: '작심', back: '삼일', full: '작심삼일', variants: ['삼일', '3일', '삼일이다'] },
-  { front: '이심', back: '전심', full: '이심전심', variants: ['전심', '점심', '전심이다'] },
-  { front: '다다', back: '익선', full: '다다익선', variants: ['익선', '입선', '익선이다'] },
-  { front: '일석', back: '이조', full: '일석이조', variants: ['이조', '2조', '이조다'] },
-  { front: '십시', back: '일반', full: '십시일반', variants: ['일반', '일반이다', '1반'] },
-  { front: '청출', back: '어람', full: '청출어람', variants: ['어람', '어남', '어람이다'] },
-  { front: '역지', back: '사지', full: '역지사지', variants: ['사지', '4지', '사지다'] },
-  { front: '동병', back: '상련', full: '동병상련', variants: ['상련', '상연', '상련이다'] },
-  { front: '백발', back: '백중', full: '백발백중', variants: ['백중', '100중', '백중이다'] },
-  { front: '천고', back: '마비', full: '천고마비', variants: ['마비', '마비다'] },
+  { front: '사자', back: '성어', full: '사자성어' },
 ];
-
-// 문자열 유사도(정확도 %) 계산 함수 (Levenshtein Distance)
-const calculateSimilarity = (str1, str2) => {
-  const s1 = str1.replace(/\s+/g, '');
-  const s2 = str2.replace(/\s+/g, '');
-  if (!s1 || !s2) return 0;
-  if (s1 === s2) return 100;
-
-  const track = Array(s2.length + 1)
-    .fill(null)
-    .map(() => Array(s1.length + 1).fill(null));
-
-  for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
-  for (let j = 0; j <= s2.length; j += 1) track[j][0] = j;
-
-  for (let j = 1; j <= s2.length; j += 1) {
-    for (let i = 1; i <= s1.length; i += 1) {
-      const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
-      track[j][i] = Math.min(
-        track[j][i - 1] + 1,
-        track[j - 1][i] + 1,
-        track[j - 1][i - 1] + indicator
-      );
-    }
-  }
-
-  const distance = track[s2.length][s1.length];
-  const maxLen = Math.max(s1.length, s2.length);
-  return Math.max(0, Math.round(((maxLen - distance) / maxLen) * 100));
-};
 
 export default function App() {
   // 인증 관련 상태
@@ -134,22 +90,17 @@ export default function App() {
   // 제기차기 게임 관련 상태
   const [jegiCount, setJegiCount] = useState(0);
 
-  // 발음 테스트 게임 관련 상태
+  // 발음 테스트 게임 관련 상태 (수동 채점)
   const [targetSentence, setTargetSentence] = useState('');
-  const [isListening, setIsListening] = useState(false);
-  const [spokenText, setSpokenText] = useState('');
-  const [pronAccuracy, setPronAccuracy] = useState(null);
-  const [pronError, setPronError] = useState('');
+  const [pronCoupons, setPronCoupons] = useState(null);
+  const [pronRankName, setPronRankName] = useState('');
 
-  // 사자성어 이어말하기 게임 관련 상태
+  // 사자성어 이어말하기 게임 관련 상태 (수동 채점)
   const [relayQuestions, setRelayQuestions] = useState([]);
   const [relayIndex, setRelayIndex] = useState(0);
   const [relayScore, setRelayScore] = useState(0);
-  const [relaySpokenText, setRelaySpokenText] = useState('');
-  const [isRelayListening, setIsRelayListening] = useState(false);
   const [relayRoundEvaluated, setRelayRoundEvaluated] = useState(false);
   const [relayIsCorrect, setRelayIsCorrect] = useState(false);
-  const [relayError, setRelayError] = useState('');
 
   // 결과 화면 마커 애니메이션 위치 상태 (%)
   const [animatedPos, setAnimatedPos] = useState(0);
@@ -157,7 +108,6 @@ export default function App() {
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const audioRef = useRef(null);
-  const recognitionRef = useRef(null);
 
   // 컴포넌트 마운트 시 오디오 사전 로딩 설정
   useEffect(() => {
@@ -236,8 +186,8 @@ export default function App() {
     setError('');
   };
 
-  // 학생 등록 및 마이크 권한 필수 검사 제출
-  const handleRegisterParticipant = async (e) => {
+  // 학생 등록 제출
+  const handleRegisterParticipant = (e) => {
     e.preventDefault();
     if (!participantId.trim()) {
       setParticipantError('학번을 입력해 주세요. (예: 10101)');
@@ -248,23 +198,10 @@ export default function App() {
       return;
     }
 
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setParticipantError('현재 브라우저에서 마이크 권한 요청을 지원하지 않습니다.');
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
-    } catch (err) {
-      console.error('마이크 권한 거부:', err);
-      setParticipantError('음성 테스트 진행을 위해 마이크 권한 허용이 필수입니다. 브라우저의 마이크 사용을 허용해 주세요.');
-      return;
-    }
-
     setParticipantError('');
     setJegiCount(0);
-    setSpokenText('');
-    setPronAccuracy(null);
+    setPronCoupons(null);
+    setPronRankName('');
     setActiveView('game_guide');
   };
 
@@ -352,134 +289,41 @@ export default function App() {
   const setupRandomPronSentence = () => {
     const randomIndex = Math.floor(Math.random() * PRON_SENTENCES.length);
     setTargetSentence(PRON_SENTENCES[randomIndex]);
-    setSpokenText('');
-    setPronAccuracy(null);
-    setPronError('');
+    setPronCoupons(null);
+    setPronRankName('');
   };
 
-  // 사자성어 5문제 랜덤 뽑기 설정
+  // 발음 수동 평가 선택 함수
+  const handleSelectPronScore = (coupons, rankName) => {
+    setPronCoupons(coupons);
+    setPronRankName(rankName);
+  };
+
+  // 사자성어 수동 설정
   const setupRelayGame = () => {
     const shuffled = [...FOUR_LETTER_IDIOMS].sort(() => 0.5 - Math.random());
-    setRelayQuestions(shuffled.slice(0, 5));
+    setRelayQuestions(shuffled);
     setRelayIndex(0);
     setRelayScore(0);
-    setRelaySpokenText('');
     setRelayRoundEvaluated(false);
     setRelayIsCorrect(false);
-    setRelayError('');
   };
 
-  // 음성 인식 시작 (발음 테스트용)
-  const startSpeechRecognition = () => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setPronError('현재 브라우저가 음성 인식을 지원하지 않습니다. Chrome/Edge를 사용해 주세요.');
-      return;
+  // 사자성어 수동 평가 (성공 / 실패)
+  const handleEvaluateRelay = (isSuccess) => {
+    setRelayRoundEvaluated(true);
+    setRelayIsCorrect(isSuccess);
+    if (isSuccess) {
+      setRelayScore((prev) => prev + 1);
     }
-
-    setPronError('');
-    setIsListening(true);
-    setSpokenText('');
-    setPronAccuracy(null);
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ko-KR';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setSpokenText(transcript);
-      const acc = calculateSimilarity(targetSentence, transcript);
-      setPronAccuracy(acc);
-      setIsListening(false);
-    };
-
-    recognition.onerror = (event) => {
-      console.error('음성 인식 오류:', event.error);
-      setIsListening(false);
-      setPronError('음성 인식에 실패했습니다. 다시 크게 말씀해 주세요.');
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  };
-
-  // 음성 인식 시작 (사자성어 이어말하기용 - STT 오인식 보정 적용)
-  const startRelaySpeechRecognition = () => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setRelayError('현재 브라우저가 음성 인식을 지원하지 않습니다.');
-      return;
-    }
-
-    setRelayError('');
-    setIsRelayListening(true);
-    setRelaySpokenText('');
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ko-KR';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onresult = (event) => {
-      const rawTranscript = event.results[0][0].transcript.trim();
-      const cleanTranscript = rawTranscript.toLowerCase().replace(/\s+/g, '');
-      const currentItem = relayQuestions[relayIndex];
-
-      setRelaySpokenText(rawTranscript);
-
-      // 정답 판정 (기본 텍스트 + 영문/발음 오인식 variants 매칭)
-      const targetBack = currentItem.back.toLowerCase();
-      const targetFull = currentItem.full.toLowerCase();
-
-      const isDirectMatch =
-        cleanTranscript.includes(targetBack) || cleanTranscript.includes(targetFull);
-
-      const isVariantMatch = currentItem.variants.some((variant) =>
-        cleanTranscript.includes(variant.toLowerCase())
-      );
-
-      const isRight = isDirectMatch || isVariantMatch;
-
-      setRelayRoundEvaluated(true);
-      setRelayIsCorrect(isRight);
-
-      if (isRight) {
-        setRelayScore((prev) => prev + 1);
-      }
-      setIsRelayListening(false);
-    };
-
-    recognition.onerror = (event) => {
-      console.error('사자성어 음성 인식 오류:', event.error);
-      setIsRelayListening(false);
-      setRelayError('음성 인식에 실패했습니다. 다시 크게 말씀해 주세요.');
-    };
-
-    recognition.onend = () => {
-      setIsRelayListening(false);
-    };
-
-    recognition.start();
   };
 
   // 사자성어 다음 문제 이동
   const handleNextRelayQuestion = () => {
     if (relayIndex + 1 < relayQuestions.length) {
       setRelayIndex((prev) => prev + 1);
-      setRelaySpokenText('');
       setRelayRoundEvaluated(false);
       setRelayIsCorrect(false);
-      setRelayError('');
     } else {
       setActiveView('settlement');
     }
@@ -503,15 +347,6 @@ export default function App() {
     const isPassed = jegiCount >= target;
     const coupons = isPassed ? 3 : 0;
     return { target, isPassed, coupons };
-  };
-
-  // 발음 테스트 통과 여부 및 간식권 계산
-  const getPronResult = () => {
-    if (pronAccuracy === null) return { rank: '미도전', coupons: 0 };
-    if (pronAccuracy === 100) return { rank: '완벽 (100%)', coupons: 3 };
-    if (pronAccuracy >= 95) return { rank: '우수 (95% 이상)', coupons: 2 };
-    if (pronAccuracy >= 90) return { rank: '통과 (90% 이상)', coupons: 1 };
-    return { rank: '실패 (90% 미만)', coupons: 0 };
   };
 
   // 부원 인증 화면
@@ -606,7 +441,6 @@ export default function App() {
   }
 
   const jegiRes = getJegiResult();
-  const pronRes = getPronResult();
   const currentRelayItem = relayQuestions[relayIndex];
 
   return (
@@ -831,11 +665,6 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-100 text-xs text-indigo-900 flex items-center gap-2">
-                  <Mic size={16} className="shrink-0 text-indigo-600" />
-                  <span>음성 테스트(발음/사자성어) 진행을 위해 마이크 권한 승인이 필요합니다.</span>
-                </div>
-
                 {participantError && (
                   <div className="flex items-center gap-1.5 text-xs text-red-500 ml-1">
                     <ShieldAlert size={14} className="shrink-0" />
@@ -847,7 +676,7 @@ export default function App() {
                   type="submit"
                   className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm mt-2 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <span>마이크 권한 승인 및 다음</span>
+                  <span>다음 (안내 확인)</span>
                   <ArrowRight size={16} />
                 </button>
               </form>
@@ -1221,21 +1050,21 @@ export default function App() {
                     <MessageSquare size={20} />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">1. 문구 확인 후 말하기</h4>
+                    <h4 className="text-sm font-bold text-slate-900">1. 제시된 문구 크게 읽기</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      화면에 제시되는 어려운 난이도의 문구를 마이크에 대고 크게 읽으세요.
+                      학생이 화면의 제시문구를 또박또박 크게 읽습니다.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
-                    <Mic size={20} />
+                    <User size={20} />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">2. 승인된 마이크 사용</h4>
+                    <h4 className="text-sm font-bold text-slate-900">2. 부원 직접 채점</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      등록 단계에서 마이크 권한이 허용되었으므로 바로 시작하실 수 있습니다.
+                      부원이 직접 발음을 듣고 완벽/우수/통과/실패 등급을 선택합니다.
                     </p>
                   </div>
                 </div>
@@ -1244,10 +1073,10 @@ export default function App() {
                 <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-100 text-xs text-purple-900">
                   <b className="block mb-1">🎁 등급별 보상 세부 안내:</b>
                   <ul className="list-disc list-inside space-y-0.5 text-slate-700">
-                    <li><b>100% (완벽 적중)</b> : 간식권 3개</li>
-                    <li><b>95% 이상</b> : 간식권 2개</li>
-                    <li><b>90% 이상</b> : 간식권 1개</li>
-                    <li><b>90% 미만</b> : 간식권 0개</li>
+                    <li><b>완벽 (100%)</b> : 간식권 3개</li>
+                    <li><b>우수 (95% 이상)</b> : 간식권 2개</li>
+                    <li><b>통과 (90% 이상)</b> : 간식권 1개</li>
+                    <li><b>실패 (90% 미만)</b> : 간식권 0개</li>
                   </ul>
                 </div>
               </div>
@@ -1256,24 +1085,24 @@ export default function App() {
                 onClick={() => setActiveView('pron_play')}
                 className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>발음 테스트 시작하기</span>
+                <span>발음 테스트 진행하기</span>
                 <ArrowRight size={18} />
               </button>
             </div>
           </div>
         )}
 
-        {/* 10. 발음 정확도 측정 진행 화면 */}
+        {/* 10. 발음 정확도 측정 진행 화면 (부원 수동 채점) */}
         {activeView === 'pron_play' && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
               <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 bg-purple-50 text-purple-600">
-                <Mic size={28} />
+                <MessageSquare size={28} />
               </div>
 
               <h2 className="text-xl font-bold text-slate-900">발음 정확하게 말하기</h2>
               <p className="text-xs text-slate-500 mt-1 mb-6">
-                [말하기 버튼]을 누르고 아래 제시문을 또박또박 읽으세요.
+                학생이 읽은 발음을 듣고 부원이 직접 채점 버튼을 누르세요.
               </p>
 
               {/* 제시된 문장 카드 */}
@@ -1286,82 +1115,99 @@ export default function App() {
                 </p>
               </div>
 
-              {/* 녹음 제어 버튼 */}
-              <div className="mb-6">
-                {isListening ? (
-                  <div className="py-5 bg-purple-50 border border-purple-200 rounded-2xl flex flex-col items-center justify-center gap-2 animate-pulse">
-                    <Mic size={32} className="text-purple-600" />
-                    <span className="text-xs font-bold text-purple-700">듣고 있습니다... 말씀해 주세요!</span>
-                  </div>
-                ) : (
+              {/* 부원 채점 버튼 영역 */}
+              <div className="space-y-2 mb-6 text-left">
+                <span className="text-xs font-semibold text-slate-600 ml-1 block mb-2">
+                  부원 직접 평가 선택:
+                </span>
+                
+                <div className="grid grid-cols-2 gap-2.5">
                   <button
-                    onClick={startSpeechRecognition}
-                    className="w-full py-4 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold rounded-2xl transition-colors shadow-md text-base flex items-center justify-center gap-2 cursor-pointer"
+                    type="button"
+                    onClick={() => handleSelectPronScore(3, '완벽 (100%)')}
+                    className={`p-3.5 rounded-2xl border text-xs font-bold transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                      pronCoupons === 3
+                        ? 'bg-amber-50 border-amber-400 text-amber-900 ring-2 ring-amber-400/30'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
                   >
-                    <Mic size={20} />
-                    <span>{spokenText ? '다시 말하기' : '음성 인식 시작 (말하기)'}</span>
+                    <span>완벽 (+3개)</span>
+                    <span className="text-[10px] font-normal text-slate-400">발음 정확함</span>
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPronScore(2, '우수 (95% 이상)')}
+                    className={`p-3.5 rounded-2xl border text-xs font-bold transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                      pronCoupons === 2
+                        ? 'bg-emerald-50 border-emerald-400 text-emerald-900 ring-2 ring-emerald-400/30'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>우수 (+2개)</span>
+                    <span className="text-[10px] font-normal text-slate-400">약간 서툼</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPronScore(1, '통과 (90% 이상)')}
+                    className={`p-3.5 rounded-2xl border text-xs font-bold transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                      pronCoupons === 1
+                        ? 'bg-blue-50 border-blue-400 text-blue-900 ring-2 ring-blue-400/30'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>통과 (+1개)</span>
+                    <span className="text-[10px] font-normal text-slate-400">절반 이상 판정</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPronScore(0, '실패 (90% 미만)')}
+                    className={`p-3.5 rounded-2xl border text-xs font-bold transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                      pronCoupons === 0
+                        ? 'bg-red-50 border-red-400 text-red-900 ring-2 ring-red-400/30'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>실패 (+0개)</span>
+                    <span className="text-[10px] font-normal text-slate-400">틀림 / 미도전</span>
+                  </button>
+                </div>
               </div>
 
-              {/* 에러 메시지 */}
-              {pronError && (
-                <div className="flex items-center gap-1.5 text-xs text-red-500 mb-4 justify-center">
-                  <ShieldAlert size={14} />
-                  <span>{pronError}</span>
-                </div>
-              )}
-
-              {/* 인식된 문장 및 정확도 결과 표시 */}
-              {spokenText && (
-                <div className="space-y-3 p-5 bg-slate-50 rounded-2xl border border-slate-100 text-left mb-6">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 block mb-1">인식된 음성</span>
-                    <p className="text-sm font-semibold text-slate-800 bg-white p-3 rounded-xl border border-slate-200">
-                      {spokenText}
-                    </p>
-                  </div>
-
-                  {pronAccuracy !== null && (
-                    <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-600">발음 정확도</span>
-                      <span className={`text-2xl font-black font-mono ${
-                        pronAccuracy >= 90 ? 'text-emerald-600' : 'text-red-500'
-                      }`}>
-                        {pronAccuracy}%
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 달성 등급 상태 표시 */}
-              {pronAccuracy !== null && (
+              {/* 판정 상태 표시 */}
+              {pronCoupons !== null && (
                 <div className={`p-4 rounded-2xl text-xs font-bold mb-6 border flex items-center justify-center gap-2 ${
-                  pronAccuracy >= 90
+                  pronCoupons > 0
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     : 'bg-red-50 text-red-600 border-red-200'
                 }`}>
-                  {pronAccuracy >= 90 ? (
+                  {pronCoupons > 0 ? (
                     <>
                       <CheckCircle2 size={16} />
-                      <span>{pronRes.rank} (간식권 +{pronRes.coupons}개)</span>
+                      <span>{pronRankName} 판정! (간식권 +{pronCoupons}개)</span>
                     </>
                   ) : (
                     <>
                       <XCircle size={16} />
-                      <span>{pronRes.rank} (간식권 미획득)</span>
+                      <span>{pronRankName} 판정 (간식권 미획득)</span>
                     </>
                   )}
                 </div>
               )}
 
               <button
+                disabled={pronCoupons === null}
                 onClick={() => {
                   setupRelayGame();
                   setActiveView('relay_guide');
                 }}
-                className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+                className={`w-full py-4 font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 ${
+                  pronCoupons !== null
+                    ? 'bg-[#1a73e8] hover:bg-blue-700 text-white cursor-pointer'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                }`}
               >
                 <span>다음 단계 (사자성어 이어말하기)</span>
                 <ArrowRight size={16} />
@@ -1395,27 +1241,27 @@ export default function App() {
                     <HelpCircle size={20} />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">1. 제시된 2글자 확인</h4>
+                    <h4 className="text-sm font-bold text-slate-900">1. 화면 글자 구분 확인</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      화면에 제시되는 앞 2글자(예: <b>사자</b>)를 보고 이어질 2글자(예: <b>성어</b>)를 생각하세요.
+                      파란색 영역은 <b>[제시어]</b>이며, 녹색 영역은 부원이 확인할 <b>[정답어]</b>입니다.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="w-10 h-10 bg-blue-50 text-[#1a73e8] rounded-xl flex items-center justify-center shrink-0 mt-0.5">
-                    <Mic size={20} />
+                    <User size={20} />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">2. 음성으로 정답 말하기</h4>
+                    <h4 className="text-sm font-bold text-slate-900">2. 부원 직접 성공/실패 판정</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      [말하기] 버튼을 누른 후 뒤 2글자(또는 4글자 전체)를 크게 말해주세요.
+                      학생이 말한 답을 듣고 부원이 [성공] 또는 [실패] 버튼을 직접 클릭합니다.
                     </p>
                   </div>
                 </div>
 
                 <div className="p-4 bg-teal-50/60 rounded-2xl border border-teal-100 text-xs text-teal-900">
-                  <b>🎁 보상 안내:</b> 총 <b>5문제</b>가 출제되며, <b>성공한 문제 수만큼 간식권(개당 1개, 최대 5개)</b>을 즉시 획득합니다!
+                  <b>🎁 보상 안내:</b> 성공한 문제 수만큼 간식권(개당 +1개)을 획득합니다!
                 </div>
               </div>
 
@@ -1423,82 +1269,74 @@ export default function App() {
                 onClick={() => setActiveView('relay_play')}
                 className="w-full py-4 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>이어말하기 시작 (총 5문제)</span>
+                <span>이어말하기 시작</span>
                 <ArrowRight size={18} />
               </button>
             </div>
           </div>
         )}
 
-        {/* 12. 사자성어 이어말하기 게임 진행 화면 */}
+        {/* 12. 사자성어 이어말하기 게임 진행 화면 (수동 판정 및 제시어/정답어 명확한 구분) */}
         {activeView === 'relay_play' && currentRelayItem && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
-              {/* 진행도 표시 */}
+              {/* 진행도 및 현황 */}
               <div className="flex items-center justify-between mb-4">
                 <span className="px-3 py-1 bg-teal-50 text-teal-700 text-xs font-bold rounded-full">
-                  문제 {relayIndex + 1} / 5
+                  문제 {relayIndex + 1} / {relayQuestions.length}
                 </span>
                 <span className="text-xs font-semibold text-slate-500">
                   현재 성공: <b className="text-teal-600">{relayScore}개</b>
                 </span>
               </div>
 
-              <h2 className="text-xl font-bold text-slate-900 mb-6">뒤에 올 2글자를 말하세요!</h2>
+              <h2 className="text-xl font-bold text-slate-900 mb-6">학생이 말할 뒤 2글자를 확인하세요!</h2>
 
-              {/* 문제 디스플레이 카드 */}
-              <div className="p-8 bg-slate-50 rounded-3xl border border-slate-200 my-4">
-                <div className="text-5xl font-black text-slate-900 font-mono tracking-widest flex items-center justify-center gap-2">
-                  <span className="text-[#1a73e8]">{currentRelayItem.front}</span>
-                  <span className="text-slate-300">
-                    {relayRoundEvaluated
-                      ? currentRelayItem.back
-                      : '??'}
+              {/* 제시어 및 정답어 분리 카드 */}
+              <div className="my-6 p-6 bg-slate-50 rounded-3xl border border-slate-200 space-y-4">
+                <div>
+                  <span className="text-[11px] font-bold text-blue-600 bg-blue-100 px-2.5 py-1 rounded-md inline-block mb-2">
+                    📢 학생에게 보여줄 제시어
                   </span>
+                  <div className="text-4xl font-black text-blue-600 tracking-wider font-mono">
+                    {currentRelayItem.front}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-200">
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-md inline-block mb-2">
+                    🎯 학생이 말해야 할 정답
+                  </span>
+                  <div className="text-4xl font-black text-emerald-600 tracking-wider font-mono">
+                    {currentRelayItem.back}
+                  </div>
                 </div>
               </div>
 
-              {/* 음성 정답 버튼 */}
-              <div className="my-6">
-                {isRelayListening ? (
-                  <div className="py-5 bg-teal-50 border border-teal-200 rounded-2xl flex flex-col items-center justify-center gap-2 animate-pulse">
-                    <Mic size={32} className="text-teal-600" />
-                    <span className="text-xs font-bold text-teal-700">듣고 있습니다... 정답을 말씀하세요!</span>
-                  </div>
-                ) : (
+              {/* 부원 직접 판정 버튼 (성공 / 실패) */}
+              {!relayRoundEvaluated ? (
+                <div className="grid grid-cols-2 gap-3 my-6">
                   <button
-                    disabled={relayRoundEvaluated}
-                    onClick={startRelaySpeechRecognition}
-                    className={`w-full py-4 font-bold rounded-2xl transition-colors shadow-md text-base flex items-center justify-center gap-2 ${
-                      relayRoundEvaluated
-                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                        : 'bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white cursor-pointer'
-                    }`}
+                    type="button"
+                    onClick={() => handleEvaluateRelay(true)}
+                    className="py-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded-2xl transition-colors shadow-md text-base flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <Mic size={20} />
-                    <span>{relaySpokenText ? '다시 정답 말하기' : '정답 말하기 (음성 인식)'}</span>
+                    <Check size={20} />
+                    <span>성공 (+1개)</span>
                   </button>
-                )}
-              </div>
 
-              {/* 에러 메시지 */}
-              {relayError && (
-                <div className="flex items-center gap-1.5 text-xs text-red-500 mb-4 justify-center">
-                  <ShieldAlert size={14} />
-                  <span>{relayError}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleEvaluateRelay(false)}
+                    className="py-4 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-bold rounded-2xl transition-colors shadow-md text-base flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <X size={20} />
+                    <span>실패 (+0개)</span>
+                  </button>
                 </div>
-              )}
-
-              {/* 라운드 결과 판정 표시 */}
-              {relayRoundEvaluated && (
-                <div className="space-y-3 p-5 bg-slate-50 rounded-2xl border border-slate-100 text-left mb-6">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 block mb-1">인식된 음성</span>
-                    <p className="text-sm font-semibold text-slate-800 bg-white p-3 rounded-xl border border-slate-200">
-                      {relaySpokenText || '(인식 실패)'}
-                    </p>
-                  </div>
-
+              ) : (
+                /* 라운드 결과 표시 및 다음 버튼 */
+                <div className="my-6 space-y-4">
                   <div className={`p-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 ${
                     relayIsCorrect
                       ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
@@ -1507,27 +1345,24 @@ export default function App() {
                     {relayIsCorrect ? (
                       <>
                         <CheckCircle2 size={16} />
-                        <span>정답입니다! ({currentRelayItem.full})</span>
+                        <span>성공 판정! (완성: {currentRelayItem.full})</span>
                       </>
                     ) : (
                       <>
                         <XCircle size={16} />
-                        <span>오답입니다! (정답: {currentRelayItem.full})</span>
+                        <span>실패 판정 (정답: {currentRelayItem.full})</span>
                       </>
                     )}
                   </div>
-                </div>
-              )}
 
-              {/* 다음 문제 이동 버튼 */}
-              {relayRoundEvaluated && (
-                <button
-                  onClick={handleNextRelayQuestion}
-                  className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <span>{relayIndex + 1 < 5 ? '다음 문제' : '최종 정산으로 이동'}</span>
-                  <ArrowRight size={16} />
-                </button>
+                  <button
+                    onClick={handleNextRelayQuestion}
+                    className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>{relayIndex + 1 < relayQuestions.length ? '다음 문제' : '최종 정산으로 이동'}</span>
+                    <ArrowRight size={16} />
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1567,25 +1402,25 @@ export default function App() {
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                   <span className="text-slate-500 text-xs">발음 테스트</span>
                   <span className="font-semibold text-slate-800">
-                    {pronAccuracy !== null ? `${pronAccuracy}%` : '미도전'} (+{pronRes.coupons}개)
+                    {pronRankName || '미도전'} (+{pronCoupons || 0}개)
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                   <span className="text-slate-500 text-xs">사자성어 이어말하기</span>
                   <span className="font-semibold text-slate-800">
-                    {relayScore} / 5개 성공 (+{relayScore}개)
+                    {relayScore} / {relayQuestions.length}개 성공 (+{relayScore}개)
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                   <span className="text-slate-500 text-xs">총 간식권</span>
                   <span className="font-bold text-[#1a73e8]">
-                    {gameResult.coupons + jegiRes.coupons + pronRes.coupons + relayScore}개
+                    {gameResult.coupons + jegiRes.coupons + (pronCoupons || 0) + relayScore}개
                   </span>
                 </div>
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-slate-700 font-bold text-xs">최종 수령 보상</span>
                   <span className="font-extrabold text-lg text-amber-600">
-                    마이쮸 {gameResult.coupons + jegiRes.coupons + pronRes.coupons + relayScore}개
+                    마이쮸 {gameResult.coupons + jegiRes.coupons + (pronCoupons || 0) + relayScore}개
                   </span>
                 </div>
               </div>
@@ -1598,8 +1433,8 @@ export default function App() {
                     setParticipantGender('남자');
                     setGameResult(null);
                     setJegiCount(0);
-                    setSpokenText('');
-                    setPronAccuracy(null);
+                    setPronCoupons(null);
+                    setPronRankName('');
                     setRelayQuestions([]);
                     setRelayIndex(0);
                     setRelayScore(0);
@@ -1618,14 +1453,14 @@ export default function App() {
                     setParticipantGender('남자');
                     setGameResult(null);
                     setJegiCount(0);
-                    setSpokenText('');
-                    setPronAccuracy(null);
+                    setPronCoupons(null);
+                    setPronRankName('');
                     setRelayQuestions([]);
                     setRelayIndex(0);
                     setRelayScore(0);
                     setActiveView('main');
                   }}
-                  className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <span>메인 목록으로 돌아가기</span>
                 </button>
