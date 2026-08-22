@@ -205,8 +205,8 @@ export default function App() {
     setError('');
   };
 
-  // 학생 등록 제출
-  const handleRegisterParticipant = (e) => {
+  // 학생 등록 및 마이크 권한 필수 검사 제출
+  const handleRegisterParticipant = async (e) => {
     e.preventDefault();
     if (!participantId.trim()) {
       setParticipantError('학번을 입력해 주세요. (예: 10101)');
@@ -216,6 +216,22 @@ export default function App() {
       setParticipantError('이름을 입력해 주세요.');
       return;
     }
+
+    // 마이크 권한 요청 및 검사 (허용되지 않으면 다음으로 이동 불가)
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setParticipantError('현재 브라우저에서 마이크 권한 요청을 지원하지 않습니다.');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 테스트 스트림 종료
+      stream.getTracks().forEach((track) => track.stop());
+    } catch (err) {
+      console.error('마이크 권한 거부:', err);
+      setParticipantError('발음 테스트 진행을 위해 마이크 권한 허용이 필수입니다. 브라우저의 마이크 사용을 허용해 주세요.');
+      return;
+    }
+
     setParticipantError('');
     setJegiCount(0);
     setSpokenText('');
@@ -312,24 +328,6 @@ export default function App() {
     setPronError('');
   };
 
-  // 사전 마이크 권한 요청 후 테스트 진입
-  const requestMicPermissionAndStart = async () => {
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setPronError('현재 브라우저에서 마이크 권한 요청을 지원하지 않습니다.');
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // 권한 확인 후 트랙 즉시 종료
-      stream.getTracks().forEach((track) => track.stop());
-      setPronError('');
-      setActiveView('pron_play');
-    } catch (err) {
-      console.error('마이크 권한 거부:', err);
-      setPronError('마이크 권한이 거부되었습니다. 주소창의 마이크 설정을 허용으로 변경해 주세요.');
-    }
-  };
-
   // 음성 인식 시작 (Web Speech API)
   const startSpeechRecognition = () => {
     const SpeechRecognition =
@@ -362,7 +360,7 @@ export default function App() {
       console.error('음성 인식 오류:', event.error);
       setIsListening(false);
       if (event.error === 'not-allowed') {
-        setPronError('마이크 권한이 거부되었습니다. 마이크 설정을 확인해주세요.');
+        setPronError('마이크 권한이 차단되어 있습니다. 주소창의 마이크 설정을 확인해주세요.');
       } else {
         setPronError('음성 인식에 실패했습니다. 다시 크게 말씀해 주세요.');
       }
@@ -644,7 +642,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. 학생 등록 화면 */}
+        {/* 3. 학생 등록 화면 (마이크 권한 사전 검사 필수) */}
         {activeView === 'game_register' && (
           <div className="max-w-md mx-auto">
             <button
@@ -721,18 +719,24 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-100 text-xs text-indigo-900 flex items-center gap-2">
+                  <Mic size={16} className="shrink-0 text-indigo-600" />
+                  <span>3단계 발음 테스트 진행을 위해 마이크 권한 승인이 필요합니다.</span>
+                </div>
+
                 {participantError && (
                   <div className="flex items-center gap-1.5 text-xs text-red-500 ml-1">
-                    <ShieldAlert size={14} />
+                    <ShieldAlert size={14} className="shrink-0" />
                     <span>{participantError}</span>
                   </div>
                 )}
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm mt-2 cursor-pointer"
+                  className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm mt-2 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  다음 (안내 확인)
+                  <span>마이크 권한 승인 및 다음</span>
+                  <ArrowRight size={16} />
                 </button>
               </form>
             </div>
@@ -992,7 +996,7 @@ export default function App() {
                 className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>제기차기 개수 입력하기</span>
-                <ArrowRight size={18} />
+                <ArrowRight size={16} />
               </button>
             </div>
           </div>
@@ -1080,7 +1084,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 9. 발음 정확도 테스트 사전 권한 체크 안내 화면 */}
+        {/* 9. 발음 정확도 테스트 사전 안내 화면 */}
         {activeView === 'pron_guide' && (
           <div className="max-w-lg mx-auto">
             <button
@@ -1117,14 +1121,14 @@ export default function App() {
                     <Mic size={20} />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">2. 마이크 권한 필수</h4>
+                    <h4 className="text-sm font-bold text-slate-900">2. 승인된 마이크 사용</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      시작 버튼 클릭 시 나오는 마이크 권한 요청 팝업에서 <b>'허용'</b>을 선택해 주세요.
+                      등록 단계에서 마이크 권한이 허용되었으므로 바로 시작하실 수 있습니다.
                     </p>
                   </div>
                 </div>
 
-                {/* 변경된 보상 등급표 */}
+                {/* 보상 등급표 */}
                 <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-100 text-xs text-purple-900">
                   <b className="block mb-1">🎁 등급별 보상 세부 안내:</b>
                   <ul className="list-disc list-inside space-y-0.5 text-slate-700">
@@ -1136,19 +1140,12 @@ export default function App() {
                 </div>
               </div>
 
-              {pronError && (
-                <div className="flex items-center gap-1.5 text-xs text-red-500 mb-4 justify-center bg-red-50 p-3 rounded-xl border border-red-200">
-                  <ShieldAlert size={16} />
-                  <span>{pronError}</span>
-                </div>
-              )}
-
               <button
-                onClick={requestMicPermissionAndStart}
+                onClick={() => setActiveView('pron_play')}
                 className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                <Mic size={18} />
-                <span>마이크 권한 확인 및 시작</span>
+                <span>발음 테스트 시작하기</span>
+                <ArrowRight size={18} />
               </button>
             </div>
           </div>
