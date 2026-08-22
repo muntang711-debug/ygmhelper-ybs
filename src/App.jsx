@@ -605,7 +605,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 게임 화면으로만 이동 (타이머 자동 시작 안함) */}
               <button
                 onClick={() => {
                   setActiveView('game_play');
@@ -664,7 +663,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 6. 미니게임 결과 및 평가 화면 (0초~12초 범위 표시 바 추가) */}
+        {/* 6. 미니게임 결과 및 평가 화면 (대칭 보장 및 초슬림 완벽 목표선) */}
         {activeView === 'game_result' && gameResult && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -694,31 +693,31 @@ export default function App() {
                     </span>
                   </div>
 
-                  <div className="relative w-full h-7 bg-slate-200 rounded-xl overflow-hidden my-2 border border-slate-300/50">
-                    {/* 근접 구간 영역 (9.75초 ~ 10.25초 -> 81.25% ~ 85.42%) */}
+                  <div className="relative w-full h-7 bg-slate-200/80 rounded-xl overflow-hidden my-2 border border-slate-300/50">
+                    {/* 근접 구간 영역 (±0.25초: 9.75s ~ 10.25s, 10.00초 정중앙 정렬로 완전 대칭) */}
                     <div
-                      className="absolute top-0 bottom-0 bg-blue-300"
-                      style={{ left: '81.25%', width: '4.17%' }}
+                      className="absolute top-0 bottom-0 bg-blue-300 -translate-x-1/2"
+                      style={{ left: '83.3333%', width: '4.1667%' }}
                       title="근접 구간 (±0.25초)"
                     ></div>
 
-                    {/* 초근접 구간 영역 (9.95초 ~ 10.05초 -> 82.92% ~ 83.75%) */}
+                    {/* 초근접 구간 영역 (±0.05초: 9.95s ~ 10.05s, 최소 6px 정중앙 정렬로 선명하게 표시) */}
                     <div
-                      className="absolute top-0 bottom-0 bg-emerald-400"
-                      style={{ left: '82.92%', width: '0.83%' }}
+                      className="absolute top-0 bottom-0 bg-emerald-500 z-10 -translate-x-1/2"
+                      style={{ left: '83.3333%', width: 'max(0.8333%, 6px)' }}
                       title="초근접 구간 (±0.05초)"
                     ></div>
 
-                    {/* 완벽 목표선 (10.00초 -> 83.33%) */}
+                    {/* 완벽 목표선 (10.00초 정중앙 1.5px 초슬림 바) */}
                     <div
-                      className="absolute top-0 bottom-0 w-1 bg-amber-500 z-10"
-                      style={{ left: '83.33%' }}
+                      className="absolute top-0 bottom-0 w-[1.5px] bg-amber-600 z-20 -translate-x-1/2"
+                      style={{ left: '83.3333%' }}
                       title="완벽 목표점 (10.00초)"
                     ></div>
 
                     {/* 사용자 누른 지점 핀 마커 */}
                     <div
-                      className="absolute top-0 bottom-0 w-2 bg-red-600 rounded-full z-20 shadow-md transform -translate-x-1/2 transition-all duration-500"
+                      className="absolute top-0 bottom-0 w-2 bg-red-600 rounded-full z-30 -translate-x-1/2 shadow-md transition-all duration-500"
                       style={{
                         left: `${Math.min((gameResult.stoppedTime / 12) * 100, 100)}%`
                       }}
@@ -742,11 +741,11 @@ export default function App() {
                       <span>근접</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
                       <span>초근접</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
+                      <span className="w-[1.5px] h-3 bg-amber-600 inline-block"></span>
                       <span>10.00s 완벽</span>
                     </div>
                     <div className="flex items-center gap-1">
