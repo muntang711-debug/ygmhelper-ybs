@@ -19,7 +19,8 @@ import {
   Gift,
   ArrowRight,
   Timer,
-  Award
+  Award,
+  Volume2
 } from 'lucide-react';
 
 // 방송부 부원 명단 데이터 (검증용)
@@ -61,6 +62,19 @@ export default function App() {
 
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
+  const audioRef = useRef(null);
+
+  // 컴포넌트 마운트 시 오디오 객체 생성
+  useEffect(() => {
+    audioRef.current = new Audio('/10sTimer.mp3');
+    audioRef.current.loop = true;
+
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, []);
 
   // 학년 변경 시 입력값 초기화
   const handleGradeChange = (e) => {
@@ -122,7 +136,7 @@ export default function App() {
     setActiveView('game_guide');
   };
 
-  // 타이머 시작
+  // 타이머 시작 (랜덤 시간 구간 음악 재생)
   const startGame = () => {
     setTime(0);
     setStoppedTime(null);
@@ -130,16 +144,30 @@ export default function App() {
     setIsRunning(true);
     startTimeRef.current = Date.now();
 
+    // 0초부터 165초(2분 45초) 사이 무작위 시작 시간 설정
+    if (audioRef.current) {
+      const randomStart = Math.random() * 165;
+      audioRef.current.currentTime = randomStart;
+      audioRef.current.play().catch(() => {
+        console.log('오디오 자동 재생이 차단되었습니다.');
+      });
+    }
+
     timerRef.current = setInterval(() => {
       const elapsed = (Date.now() - startTimeRef.current) / 1000;
       setTime(elapsed);
     }, 10);
   };
 
-  // 타이머 정지 및 평가
+  // 타이머 정지 및 음악 정지
   const stopGame = () => {
     clearInterval(timerRef.current);
     const finalTime = (Date.now() - startTimeRef.current) / 1000;
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+
     setTime(finalTime);
     setStoppedTime(finalTime);
     setIsRunning(false);
@@ -174,19 +202,31 @@ export default function App() {
     setActiveView('game_result');
   };
 
-  // 타이머 정리
+  // 타이머 정리 및 음악 정지
   useEffect(() => {
-    return () => clearInterval(timerRef.current);
+    return () => {
+      clearInterval(timerRef.current);
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
   }, []);
 
-  // 타이머 투명도 계산 (0~3초 페이드아웃, 3초 이상 보이지 않음, 정지 시 보임)
+  // 화면이 바뀔 때 음악 정지
+  useEffect(() => {
+    if (activeView !== 'game_play' && audioRef.current) {
+      audioRef.current.pause();
+    }
+  }, [activeView]);
+
+  // 타이머 투명도 계산 (0~3초 페이드아웃, 3초 이상 보이지 않음)
   const getTimerOpacity = () => {
     if (!isRunning) return 1;
     if (time >= 3.0) return 0;
     return Math.max(0, (3.0 - time) / 3.0);
   };
 
-  // 00.00 포맷 변환 함수
+  // 00.00 포맷 변환
   const formatDisplayTime = (val) => {
     return val.toFixed(2).padStart(5, '0');
   };
@@ -325,7 +365,6 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {/* 보물찾기 카드 (활성화) */}
               <div
                 onClick={() => setActiveView('treasure_menu')}
                 className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between group"
@@ -375,7 +414,6 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
-              {/* 옵션 1: 서비스 연동 (잠금) */}
               <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm opacity-60 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-4">
@@ -398,7 +436,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 옵션 2: 올인원 테스트 (활성화) */}
               <div
                 onClick={() => setActiveView('game_register')}
                 className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between group"
@@ -523,7 +560,7 @@ export default function App() {
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">1. 헤드셋 착용</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">준비된 헤드셋을 착용하고 안내 음성에 집중해 주세요.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">준비된 헤드셋을 착용하고 나오는 오디오 방해 요소에 현혹되지 마세요.</p>
                   </div>
                 </div>
 
@@ -562,13 +599,13 @@ export default function App() {
         {activeView === 'game_play' && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
-              <div className="mb-2 text-xs text-slate-500 font-medium">
-                {participantId} {participantName} 학생 도전 중
+              <div className="mb-2 text-xs text-slate-500 font-medium flex items-center justify-center gap-1.5">
+                <span>{participantId} {participantName} 학생 도전 중</span>
+                {isRunning && <Volume2 size={14} className="text-blue-500 animate-pulse" />}
               </div>
 
               <h3 className="text-lg font-bold text-slate-900 mb-6">10.00초에 맞춰 정지하세요!</h3>
 
-              {/* 큼지막한 00.00 타이머 디스플레이 */}
               <div className="h-36 flex items-center justify-center my-4 bg-slate-50/70 rounded-3xl border border-slate-100">
                 <div
                   style={{ opacity: getTimerOpacity() }}
@@ -582,7 +619,6 @@ export default function App() {
                 {isRunning ? (time < 3.0 ? '숫자가 사라지는 중...' : '감각으로 10초를 맞추세요!') : '시작 버튼을 누르세요'}
               </p>
 
-              {/* 버튼 영역 (정지 버튼에 무분별한 리듬/패턴 애니메이션 제거) */}
               {isRunning ? (
                 <button
                   onClick={stopGame}
@@ -615,7 +651,6 @@ export default function App() {
               <h2 className="text-2xl font-bold text-slate-900 mb-1">도전 결과</h2>
               <p className="text-xs text-slate-500 mb-6">{participantId} {participantName} 학생의 기록입니다.</p>
 
-              {/* 기록 디스플레이 (00.00 형식) */}
               <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-6">
                 <div className="text-xs text-slate-400 mb-1">최종 기록</div>
                 <div className="text-5xl font-black text-slate-900 font-mono mb-2">
@@ -626,7 +661,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 등급 판정 박스 */}
               <div className={`p-5 rounded-2xl border mb-6 ${
                 gameResult.rank === '완벽'
                   ? 'bg-amber-50 border-amber-200 text-amber-900'
