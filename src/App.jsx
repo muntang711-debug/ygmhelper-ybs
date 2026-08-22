@@ -50,7 +50,7 @@ export default function App() {
   const [userSession, setUserSession] = useState(null);
   const [error, setError] = useState('');
 
-  // 화면 이동 상태 ('main' | 'treasure_menu' | 'game_register' | 'game_guide' | 'game_play' | 'game_result' | 'jegi_play' | 'settlement')
+  // 화면 이동 상태 ('main' | 'treasure_menu' | 'game_register' | 'game_guide' | 'game_play' | 'game_result' | 'jegi_guide' | 'jegi_play' | 'settlement')
   const [activeView, setActiveView] = useState('main');
 
   // 미니게임 참가 학생 정보
@@ -525,7 +525,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. 학생 등록 화면 (성별 추가) */}
+        {/* 3. 학생 등록 화면 (개수 정보 텍스트 삭제) */}
         {activeView === 'game_register' && (
           <div className="max-w-md mx-auto">
             <button
@@ -586,7 +586,7 @@ export default function App() {
                           : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                       }`}
                     >
-                      남자 (목표 5개)
+                      남자
                     </button>
                     <button
                       type="button"
@@ -597,7 +597,7 @@ export default function App() {
                           : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                       }`}
                     >
-                      여자 (목표 3개)
+                      여자
                     </button>
                   </div>
                 </div>
@@ -620,7 +620,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 4. 미니게임 진행 안내 화면 */}
+        {/* 4. 10초 타이머 진행 안내 화면 */}
         {activeView === 'game_guide' && (
           <div className="max-w-lg mx-auto">
             <button
@@ -725,7 +725,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 6. 타이머 결과 화면 -> 다음 제기차기로 이동 */}
+        {/* 6. 타이머 결과 화면 */}
         {activeView === 'game_result' && gameResult && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -809,17 +809,77 @@ export default function App() {
               </div>
 
               <button
-                onClick={() => setActiveView('jegi_play')}
+                onClick={() => setActiveView('jegi_guide')}
                 className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>다음 단계 (제기차기 측정)</span>
+                <span>다음 단계 (제기차기 안내)</span>
                 <ArrowRight size={16} />
               </button>
             </div>
           </div>
         )}
 
-        {/* 7. NEW: 제기차기 개수 측정 화면 */}
+        {/* 7. NEW: 제기차기 시작 전 안내 화면 */}
+        {activeView === 'jegi_guide' && (
+          <div className="max-w-lg mx-auto">
+            <button
+              onClick={() => setActiveView('game_result')}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 mb-6 transition-colors cursor-pointer"
+            >
+              <ChevronLeft size={16} />
+              <span>타이머 결과로 돌아가기</span>
+            </button>
+
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
+              <div className="text-center mb-6">
+                <span className="px-3 py-1 bg-amber-50 text-amber-600 text-xs font-semibold rounded-full">
+                  {participantId} {participantName} ({participantGender})
+                </span>
+                <h2 className="text-2xl font-bold text-slate-900 mt-3">제기차기 게임 안내</h2>
+              </div>
+
+              <div className="space-y-4 mb-8">
+                <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+                    <Activity size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">1. 제기차기 진행</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">준비된 제기를 받아 땅에 떨어뜨리지 않고 계속해서 차 올리세요.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="w-10 h-10 bg-blue-50 text-[#1a73e8] rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+                    <Target size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">2. 개수 입력</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      도전이 완료되면 방원이 측정한 개수를 다음 화면의 카운터로 입력하세요.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100 text-xs text-slate-700">
+                  <b>💡 성공 기준:</b> 기준 개수({participantGender === '남자' ? '남자 5개' : '여자 3개'}) 이상 성공 시 <b>간식권 3개</b>를 추가로 획득합니다!
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setActiveView('jegi_play');
+                }}
+                className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>제기차기 개수 입력하기</span>
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 8. 제기차기 개수 측정 화면 */}
         {activeView === 'jegi_play' && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -898,7 +958,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 8. 통합 최종 정산 화면 */}
+        {/* 9. 통합 최종 정산 화면 */}
         {activeView === 'settlement' && gameResult && (
           <div className="max-w-md mx-auto">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
