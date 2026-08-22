@@ -85,7 +85,8 @@ export default function App() {
   // | 'aio_relay_guide' | 'aio_relay_play' | 'aio_settlement'
 
   // 서비스 연동 기기 역할 상태
-  const [stationRole, setStationRole] = useState(''); // 'register' | 'timer' | 'jegi' | 'pron' | 'relay' | 'settlement'
+  // 'register' | 'timer' | 'jegi' | 'pron' | 'relay' | 'settlement_1' | 'settlement_2' | 'settlement_3' | 'settlement_4'
+  const [stationRole, setStationRole] = useState('');
 
   // 파이어베이스 실시간 수신 상태
   const [globalParticipants, setGlobalParticipants] = useState({});
@@ -122,14 +123,11 @@ export default function App() {
   const [relayRoundEvaluated, setRelayRoundEvaluated] = useState(false);
   const [relayIsCorrect, setRelayIsCorrect] = useState(false);
 
-  // 타임라인 마커 위치 애니메이션 (%)
-  const [animatedPos, setAnimatedPos] = useState(0);
-
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const audioRef = useRef(null);
 
-  // 파이어베이스 데이터 실시간 동기화 및 관제 수신
+  // 파이어베이스 데이터 실시간 동기화
   useEffect(() => {
     const participantsRef = ref(db, 'participants');
     const stationsRef = ref(db, 'connectedStations');
@@ -142,7 +140,7 @@ export default function App() {
       const data = snapshot.val() || {};
       setConnectedStations(data);
 
-      // 만약 데이터 초기화로 인해 현재 기기 등록이 지워졌다면 역할 초기화
+      // 데이터 초기화 시 기기 역할 자동 해제
       if (stationRole && !data[deviceId]) {
         setStationRole('');
         setSelectedStudentId('');
@@ -156,7 +154,7 @@ export default function App() {
     };
   }, [deviceId, stationRole]);
 
-  // 실시간 기기 핑(Heartbeat) 및 이탈(onDisconnect) 자동 제거 로직
+  // 실시간 기기 핑(Heartbeat) 및 이탈(onDisconnect) 자동 제거
   useEffect(() => {
     if (!stationRole) return;
 
@@ -179,7 +177,7 @@ export default function App() {
     };
   }, [stationRole, deviceId]);
 
-  // 오디오 파일 사전 로딩
+  // 오디오 사전 로딩
   useEffect(() => {
     const audio = new Audio('/10sTimer.mp3');
     audio.preload = 'auto';
@@ -193,18 +191,6 @@ export default function App() {
       }
     };
   }, []);
-
-  // 타임라인 애니메이션
-  useEffect(() => {
-    if (activeView === 'aio_timer_result' && gameResult) {
-      setAnimatedPos(0);
-      const timer = setTimeout(() => {
-        const targetPos = Math.min((gameResult.stoppedTime / 12) * 100, 100);
-        setAnimatedPos(targetPos);
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [activeView, gameResult]);
 
   // 학년 선택
   const handleGradeChange = (e) => {
@@ -241,24 +227,15 @@ export default function App() {
     setError('');
   };
 
-  // 특정 역할(부스)에 이미 다른 기기가 접속 중인지 확인 (1~5번 부스 1대 제한)
-  const isRoleOccupied = (roleToCheck) => {
-    if (roleToCheck === 'settlement') return false; // 6번 간식 수령대는 다중 접속 가능
-    const now = Date.now();
-    return Object.entries(connectedStations).some(([id, station]) => {
-      return id !== deviceId && station.role === roleToCheck && (now - station.lastActive < 5000);
-    });
-  };
-
   // 부스별 플레이 자격 요건 검증 (앞 단계 완료 필수)
   const canPlayStation = (student, role) => {
     if (!student) return false;
     const scores = student.scores || {};
-    if (role === 'timer') return true; // 등록된 학생이면 10초 타이머 가능
-    if (role === 'jegi') return !!scores.timer; // 타이머 완료자만 제기차기 가능
-    if (role === 'pron') return !!scores.jegi; // 제기차기 완료자만 발음 테스트 가능
-    if (role === 'relay') return !!scores.pron; // 발음 완료자만 사자성어 가능
-    if (role === 'settlement') return !!scores.relay; // 사자성어 완료자만 수령 가능
+    if (role === 'timer') return true;
+    if (role === 'jegi') return !!scores.timer;
+    if (role === 'pron') return !!scores.jegi;
+    if (role === 'relay') return !!scores.pron;
+    if (role.startsWith('settlement')) return !!scores.relay;
     return false;
   };
 
@@ -268,13 +245,13 @@ export default function App() {
       alert('관리자만 초기화할 수 있습니다.');
       return;
     }
-    if (window.confirm('서버의 모든 학생 참가 기록, 점수, 기기 접속 정보 및 모든 기기의 역할 선택까지 전체 초기화하시겠습니까?')) {
+    if (window.confirm('모든 참가자 데이터, 점수, 기기 역할까지 파이어베이스에서 완전히 초기화하시겠습니까?')) {
       remove(ref(db, 'participants'));
       remove(ref(db, 'connectedStations'));
       setStationRole('');
       setSelectedStudentId('');
       setActiveView('network_menu');
-      alert('서버 데이터 및 기기 역할 설정이 완전히 초기화되었습니다.');
+      alert('모든 데이터와 기기 설정이 초기화되었습니다.');
     }
   };
 
@@ -352,7 +329,6 @@ export default function App() {
     const resultObj = { stoppedTime: roundedTime, diff: diff.toFixed(2), rank, coupons };
     setGameResult(resultObj);
 
-    // 연동 모드일 경우 서버 저장
     if (stationRole === 'timer' && selectedStudentId) {
       update(ref(db, `participants/${selectedStudentId}/scores/timer`), resultObj);
     }
@@ -388,7 +364,7 @@ export default function App() {
     }
   };
 
-  // 사자성어 결과 서버 저장
+  // 사자성어 결과 서버 저장 및 간식 수령대(1~4번) 랜덤 배정
   const handleSaveRelayScore = (isSuccess) => {
     setRelayRoundEvaluated(true);
     setRelayIsCorrect(isSuccess);
@@ -396,10 +372,35 @@ export default function App() {
     if (isSuccess) setRelayScore(newScore);
 
     if (stationRole === 'relay' && selectedStudentId) {
+      // 현재 접속해 있는 간식 수령대 기기 목록 가져오기
+      const now = Date.now();
+      const activeSettlementRoles = Object.values(connectedStations)
+        .filter((s) => s.role && s.role.startsWith('settlement_') && (now - s.lastActive < 5000))
+        .map((s) => s.role);
+
+      let assignedRole = null;
+      let alertMsg = '';
+
+      if (activeSettlementRoles.length > 0) {
+        // 접속된 수령대 중 랜덤 1개 선택
+        const randomIdx = Math.floor(Math.random() * activeSettlementRoles.length);
+        assignedRole = activeSettlementRoles[randomIdx];
+        const num = assignedRole.replace('settlement_', '');
+        alertMsg = `사자성어 완료! 🎉 간식 수령대 [${num}번] 부스로 이동하세요!`;
+      } else {
+        alertMsg = `사자성어 완료! 현재 접속된 간식 수령대가 없어 데이터가 보관됩니다. 수령대가 연결되면 안내를 받으세요.`;
+      }
+
       update(ref(db, `participants/${selectedStudentId}/scores/relay`), {
         score: newScore,
         coupons: newScore,
       });
+
+      update(ref(db, `participants/${selectedStudentId}`), {
+        assignedSettlement: assignedRole,
+      });
+
+      alert(alertMsg);
     }
   };
 
@@ -420,7 +421,6 @@ export default function App() {
     return { target, isPassed, coupons };
   };
 
-  // 인증 로그인 전 화면
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#f8fafd] flex flex-col items-center justify-center p-4 font-sans">
@@ -507,6 +507,12 @@ export default function App() {
 
   const jegiRes = getJegiResult();
 
+  // 현재 접속된 간식수령대 기기 목록
+  const nowTime = Date.now();
+  const activeSettlementRoles = Object.values(connectedStations)
+    .filter((s) => s.role && s.role.startsWith('settlement_') && (nowTime - s.lastActive < 5000))
+    .map((s) => s.role);
+
   return (
     <div className="min-h-screen bg-[#f8fafd] text-slate-800 font-sans">
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-4 sm:px-6 py-3 sm:py-4">
@@ -534,7 +540,7 @@ export default function App() {
       </header>
 
       <main className="max-w-5xl mx-auto p-4 sm:p-6 md:p-8">
-        {/* 1. 메인 서비스 목록 */}
+        {/* 메인 서비스 목록 */}
         {activeView === 'main' && (
           <div>
             <div className="mb-6 sm:mb-8">
@@ -572,7 +578,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 2. 보물찾기 모드 선택 */}
+        {/* 보물찾기 모드 선택 */}
         {activeView === 'treasure_menu' && (
           <div>
             <button
@@ -589,7 +595,6 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
-              {/* 다중 기기 실시간 연동 모드 (모든 부원 참여 허용) */}
               <div
                 onClick={() => setActiveView('network_menu')}
                 className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between group"
@@ -618,7 +623,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 단일 기기 올인원 풀코스 체험 모드 */}
               <div
                 onClick={() => setActiveView('aio_register')}
                 className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between group"
@@ -648,7 +652,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. 서비스 연동 관제 & 역할 선택 메뉴 */}
+        {/* 기기 역할 설정 카탈로그 */}
         {activeView === 'network_menu' && (
           <div>
             <button
@@ -662,7 +666,7 @@ export default function App() {
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">기기 역할 설정 & 현장 관제</h2>
-                <p className="text-sm text-slate-500 mt-1">이 기기의 부스 역할을 선택하세요. (1~5번 부스는 1대만 접속 가능)</p>
+                <p className="text-sm text-slate-500 mt-1">이 기기에서 담당할 부스 역할을 선택하세요.</p>
               </div>
 
               {userSession?.isAdmin && (
@@ -676,77 +680,87 @@ export default function App() {
               )}
             </div>
 
-            {/* 실시간 파이어베이스 부스 연결 현황 */}
-            <div className="p-6 bg-white rounded-3xl border border-slate-200/80 shadow-sm mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Wifi size={18} className="text-emerald-500" />
-                  <span className="text-sm font-bold text-slate-800">파이어베이스 실시간 부스 연결 상태</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-center">
-                {['register', 'timer', 'jegi', 'pron', 'relay', 'settlement'].map((r) => {
-                  const isOccupied = isRoleOccupied(r);
-                  const title = r === 'register' ? '정보입력대' : r === 'timer' ? '10초타이머' : r === 'jegi' ? '제기차기' : r === 'pron' ? '발음테스트' : r === 'relay' ? '사자성어' : '간식수령대';
-                  return (
-                    <div key={r} className={`p-3 rounded-2xl border ${isOccupied ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-                      <span className="text-[10px] font-bold block mb-1">{title}</span>
-                      <span className="text-xs font-extrabold">{isOccupied ? '🟢 사용 중' : '⚪ 대기 중'}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
             <h3 className="text-sm font-bold text-slate-700 mb-4 ml-1">이 기기의 부스 역할을 선택하세요:</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {[
-                { role: 'register', num: '1', name: '학생 정보입력대', desc: '도전 학생의 학번, 이름, 성별을 등록합니다.', icon: User, color: 'blue' },
-                { role: 'timer', num: '2', name: '10초 타이머 부스', desc: '10초 타이머를 측정하고 점수를 기록합니다.', icon: Timer, color: 'indigo' },
-                { role: 'jegi', num: '3', name: '제기차기 부스', desc: '제기차기 성공 개수를 측정하고 채점합니다.', icon: Activity, color: 'amber' },
-                { role: 'pron', num: '4', name: '발음 테스트 부스', desc: '제시어 읽기 정확도를 수동 채점합니다.', icon: MessageSquare, color: 'purple' },
-                { role: 'relay', num: '5', name: '사자성어 부스', desc: '이어말하기 성공/실패를 판정합니다.', icon: HelpCircle, color: 'teal' },
-                { role: 'settlement', num: '6', name: '간식 수령대', desc: '통합 점수 계산 및 간식을 수령 처리합니다.', icon: Gift, color: 'emerald' },
-              ].map((item) => {
-                const occupied = isRoleOccupied(item.role);
-                const IconComponent = item.icon;
+              {/* 1. 정보입력대 */}
+              <button
+                onClick={() => { setStationRole('register'); setSelectedStudentId(''); setActiveView('station_app'); }}
+                className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-blue-400 text-left transition-all cursor-pointer group"
+              >
+                <div className="w-10 h-10 bg-blue-50 text-[#1a73e8] rounded-xl flex items-center justify-center mb-3">
+                  <User size={20} />
+                </div>
+                <h4 className="text-base font-bold text-slate-900 group-hover:text-[#1a73e8]">1. 학생 정보입력대</h4>
+                <p className="text-xs text-slate-400 mt-1">도전 학생의 학번, 이름, 성별을 등록합니다.</p>
+              </button>
 
-                return (
-                  <button
-                    key={item.role}
-                    disabled={occupied}
-                    onClick={() => {
-                      setStationRole(item.role);
-                      setSelectedStudentId('');
-                      setActiveView('station_app');
-                    }}
-                    className={`p-5 rounded-3xl border shadow-sm text-left transition-all ${
-                      occupied
-                        ? 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed'
-                        : 'bg-white border-slate-200/80 hover:border-blue-400 cursor-pointer group'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <div className={`w-10 h-10 bg-${item.color}-50 text-${item.color}-600 rounded-xl flex items-center justify-center`}>
-                        <IconComponent size={20} />
-                      </div>
-                      {occupied && (
-                        <span className="px-2 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded-md">
-                          다른 기기 사용 중
-                        </span>
-                      )}
-                    </div>
-                    <h4 className="text-base font-bold text-slate-900">{item.num}. {item.name}</h4>
-                    <p className="text-xs text-slate-400 mt-1">{item.desc}</p>
-                  </button>
-                );
-              })}
+              {/* 2. 10초 타이머 */}
+              <button
+                onClick={() => { setStationRole('timer'); setSelectedStudentId(''); setActiveView('station_app'); }}
+                className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-blue-400 text-left transition-all cursor-pointer group"
+              >
+                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-3">
+                  <Timer size={20} />
+                </div>
+                <h4 className="text-base font-bold text-slate-900 group-hover:text-indigo-600">2. 10초 타이머 부스</h4>
+                <p className="text-xs text-slate-400 mt-1">10초 타이머를 측정하고 점수를 기록합니다.</p>
+              </button>
+
+              {/* 3. 제기차기 */}
+              <button
+                onClick={() => { setStationRole('jegi'); setSelectedStudentId(''); setActiveView('station_app'); }}
+                className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-blue-400 text-left transition-all cursor-pointer group"
+              >
+                <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mb-3">
+                  <Activity size={20} />
+                </div>
+                <h4 className="text-base font-bold text-slate-900 group-hover:text-amber-600">3. 제기차기 부스</h4>
+                <p className="text-xs text-slate-400 mt-1">제기차기 성공 개수를 측정하고 채점합니다.</p>
+              </button>
+
+              {/* 4. 발음 테스트 (보라색 박스 디자인) */}
+              <button
+                onClick={() => { setStationRole('pron'); setSelectedStudentId(''); setActiveView('station_app'); }}
+                className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-purple-400 text-left transition-all cursor-pointer group"
+              >
+                <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center mb-3">
+                  <MessageSquare size={20} />
+                </div>
+                <h4 className="text-base font-bold text-slate-900 group-hover:text-purple-600">4. 발음 테스트 부스</h4>
+                <p className="text-xs text-slate-400 mt-1">제시어 읽기 정확도를 수동 채점합니다.</p>
+              </button>
+
+              {/* 5. 사자성어 (청록색 박스 디자인) */}
+              <button
+                onClick={() => { setStationRole('relay'); setSelectedStudentId(''); setActiveView('station_app'); }}
+                className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-teal-400 text-left transition-all cursor-pointer group"
+              >
+                <div className="w-10 h-10 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center mb-3">
+                  <HelpCircle size={20} />
+                </div>
+                <h4 className="text-base font-bold text-slate-900 group-hover:text-teal-600">5. 사자성어 부스</h4>
+                <p className="text-xs text-slate-400 mt-1">이어말하기 성공/실패를 판정합니다.</p>
+              </button>
+
+              {/* 6. 간식 수령대 1~4번 */}
+              {[1, 2, 3, 4].map((num) => (
+                <button
+                  key={`settlement_${num}`}
+                  onClick={() => { setStationRole(`settlement_${num}`); setSelectedStudentId(''); setActiveView('station_app'); }}
+                  className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-emerald-400 text-left transition-all cursor-pointer group"
+                >
+                  <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-3">
+                    <Gift size={20} />
+                  </div>
+                  <h4 className="text-base font-bold text-slate-900 group-hover:text-emerald-600">6. 간식 수령대 [{num}번]</h4>
+                  <p className="text-xs text-slate-400 mt-1">{num}번 창구로 배정된 학생의 간식을 정산합니다.</p>
+                </button>
+              ))}
             </div>
           </div>
         )}
 
-        {/* 4. 부스별 전용 앱 화면 (펼쳐진 학생 선택 카드 목록 적용) */}
+        {/* 부스별 전용 앱 화면 */}
         {activeView === 'station_app' && (
           <div>
             <div className="flex items-center justify-between mb-6">
@@ -768,12 +782,13 @@ export default function App() {
                   stationRole === 'timer' ? '2. 10초 타이머' :
                   stationRole === 'jegi' ? '3. 제기차기' :
                   stationRole === 'pron' ? '4. 발음테스트' :
-                  stationRole === 'relay' ? '5. 사자성어' : '6. 간식수령대'
+                  stationRole === 'relay' ? '5. 사자성어' :
+                  `6. 간식수령대 [${stationRole.replace('settlement_', '')}번]`
                 }</span>
               </div>
             </div>
 
-            {/* 1번 정보 입력대 전용 */}
+            {/* 1번 정보 입력대 */}
             {stationRole === 'register' && (
               <div className="max-w-md mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
                 <div className="text-center mb-6">
@@ -849,8 +864,8 @@ export default function App() {
               </div>
             )}
 
-            {/* 2~5번 부스용 쫘라락 펼쳐진 학생 선택 카드 목록 */}
-            {stationRole !== 'register' && stationRole !== 'settlement' && (
+            {/* 2~5번 부스용 펼쳐진 학생 선택 카드 목록 */}
+            {stationRole !== 'register' && !stationRole.startsWith('settlement') && (
               <div className="max-w-2xl mx-auto mb-6 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm">
                 <div className="flex items-center justify-between mb-3 ml-1">
                   <span className="text-xs font-bold text-slate-700">
@@ -1007,70 +1022,88 @@ export default function App() {
               </div>
             )}
 
-            {/* 6번 간식 수령대 */}
-            {stationRole === 'settlement' && (
+            {/* 6번 간식 수령대 (1~4번 부스 분리 & 이관 로직 적용) */}
+            {stationRole.startsWith('settlement') && (
               <div className="max-w-xl mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
                 <div className="text-center mb-6">
                   <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
                     <Gift size={24} />
                   </div>
-                  <h2 className="text-xl font-bold text-slate-900">간식 수령대</h2>
-                  <p className="text-xs text-slate-500 mt-1">모든 부스 도전 결과를 확인 후 간식을 지급 처리합니다.</p>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    간식 수령대 [{stationRole.replace('settlement_', '')}번 창구]
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    이 창구로 배정되었거나, 배정받은 창구가 이탈하여 자동 이관된 학생 리스트입니다.
+                  </p>
                 </div>
 
                 <div className="space-y-4">
                   {Object.values(globalParticipants).length === 0 ? (
                     <p className="text-center text-xs text-slate-400 py-8">등록된 학생이 없습니다.</p>
                   ) : (
-                    Object.values(globalParticipants).map((st) => {
-                      const timerC = st.scores?.timer?.coupons || 0;
-                      const jegiC = st.scores?.jegi?.coupons || 0;
-                      const pronC = st.scores?.pron?.coupons || 0;
-                      const relayC = st.scores?.relay?.coupons || 0;
-                      const totalC = timerC + jegiC + pronC + relayC;
-                      const isAllDone = canPlayStation(st, 'settlement');
+                    Object.values(globalParticipants)
+                      .filter((st) => {
+                        // 사자성어 게임을 마친 학생만 수령 대상
+                        if (!canPlayStation(st, stationRole)) return false;
 
-                      return (
-                        <div key={st.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-slate-900">[{st.id}] {st.name}</span>
-                              <span className="text-xs text-slate-400">({st.gender})</span>
-                              {st.settled ? (
-                                <span className="px-2 py-0.5 bg-gray-200 text-gray-700 font-bold rounded text-[10px]">수령완료</span>
-                              ) : isAllDone ? (
-                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 font-bold rounded text-[10px]">수령가능</span>
-                              ) : (
-                                <span className="px-2 py-0.5 bg-amber-100 text-amber-700 font-bold rounded text-[10px]">진행중</span>
-                              )}
+                        // 원래 지정된 수령대 기기가 살아있는지 확인
+                        const isOriginalAssignedAlive = activeSettlementRoles.includes(st.assignedSettlement);
+
+                        // 1. 이 창구에 정확히 배정된 학생
+                        if (st.assignedSettlement === stationRole) return true;
+
+                        // 2. 다른 창구로 배정받았으나 해당 창구가 끊겨서 이관된 학생 (현재 부스가 활성화된 첫 수령대인 경우 흡수)
+                        if (!isOriginalAssignedAlive && activeSettlementRoles[0] === stationRole) return true;
+
+                        return false;
+                      })
+                      .map((st) => {
+                        const timerC = st.scores?.timer?.coupons || 0;
+                        const jegiC = st.scores?.jegi?.coupons || 0;
+                        const pronC = st.scores?.pron?.coupons || 0;
+                        const relayC = st.scores?.relay?.coupons || 0;
+                        const totalC = timerC + jegiC + pronC + relayC;
+                        const isReassigned = st.assignedSettlement !== stationRole;
+
+                        return (
+                          <div key={st.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold text-slate-900">[{st.id}] {st.name}</span>
+                                <span className="text-xs text-slate-400">({st.gender})</span>
+                                {st.settled ? (
+                                  <span className="px-2 py-0.5 bg-gray-200 text-gray-700 font-bold rounded text-[10px]">수령완료</span>
+                                ) : isReassigned ? (
+                                  <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 font-bold rounded text-[10px]">자동 이관됨</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 font-bold rounded text-[10px]">정상 배정</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 mt-2 space-x-2">
+                                <span>타이머: <b>+{timerC}</b></span>
+                                <span>제기: <b>+{jegiC}</b></span>
+                                <span>발음: <b>+{pronC}</b></span>
+                                <span>사자성어: <b>+{relayC}</b></span>
+                              </div>
                             </div>
-                            <div className="text-xs text-slate-500 mt-2 space-x-2">
-                              <span>타이머: <b>+{timerC}</b></span>
-                              <span>제기: <b>+{jegiC}</b></span>
-                              <span>발음: <b>+{pronC}</b></span>
-                              <span>사자성어: <b>+{relayC}</b></span>
+
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-base font-black text-amber-600">마이쮸 {totalC}개</span>
+                              <button
+                                disabled={st.settled}
+                                onClick={() => handleSettleSnack(st.id)}
+                                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                                  st.settled
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                                }`}
+                              >
+                                {st.settled ? '지급 완료됨' : '간식 지급하기'}
+                              </button>
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-3 shrink-0">
-                            <span className="text-base font-black text-amber-600">마이쮸 {totalC}개</span>
-                            <button
-                              disabled={st.settled || !isAllDone}
-                              onClick={() => handleSettleSnack(st.id)}
-                              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                                st.settled
-                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                  : isAllDone
-                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
-                                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                              }`}
-                            >
-                              {st.settled ? '지급 완료됨' : isAllDone ? '간식 지급하기' : '게임 진행 중'}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })
                   )}
                 </div>
               </div>
@@ -1078,7 +1111,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 5. 복원된 올인원 체험 풀코스 로직 */}
+        {/* 올인원 체험 풀코스 */}
         {activeView === 'aio_register' && (
           <div className="max-w-md mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
             <button onClick={() => setActiveView('treasure_menu')} className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-6 cursor-pointer">
