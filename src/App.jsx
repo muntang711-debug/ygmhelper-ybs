@@ -18,7 +18,6 @@ import {
   Trophy,
   Gift,
   ArrowRight,
-  CheckCircle2,
   Timer,
   Award
 } from 'lucide-react';
@@ -185,6 +184,11 @@ export default function App() {
     if (!isRunning) return 1;
     if (time >= 3.0) return 0;
     return Math.max(0, (3.0 - time) / 3.0);
+  };
+
+  // 00.00 포맷 변환 함수
+  const formatDisplayTime = (val) => {
+    return val.toFixed(2).padStart(5, '0');
   };
 
   // 부원 인증 화면
@@ -562,15 +566,15 @@ export default function App() {
                 {participantId} {participantName} 학생 도전 중
               </div>
 
-              <h3 className="text-lg font-bold text-slate-900 mb-8">10.00초에 맞춰 정지하세요!</h3>
+              <h3 className="text-lg font-bold text-slate-900 mb-6">10.00초에 맞춰 정지하세요!</h3>
 
-              {/* 타이머 디스플레이 */}
-              <div className="h-32 flex items-center justify-center my-6">
+              {/* 큼지막한 00.00 타이머 디스플레이 */}
+              <div className="h-36 flex items-center justify-center my-4 bg-slate-50/70 rounded-3xl border border-slate-100">
                 <div
                   style={{ opacity: getTimerOpacity() }}
-                  className="text-6xl font-black tracking-tight text-slate-900 font-mono transition-opacity duration-200 select-none"
+                  className="text-7xl font-black tracking-tight text-slate-900 font-mono transition-opacity duration-200 select-none"
                 >
-                  {time.toFixed(2)}s
+                  {formatDisplayTime(time)}
                 </div>
               </div>
 
@@ -578,21 +582,21 @@ export default function App() {
                 {isRunning ? (time < 3.0 ? '숫자가 사라지는 중...' : '감각으로 10초를 맞추세요!') : '시작 버튼을 누르세요'}
               </p>
 
-              {/* 버튼 영역 */}
+              {/* 버튼 영역 (정지 버튼에 무분별한 리듬/패턴 애니메이션 제거) */}
               {isRunning ? (
                 <button
                   onClick={stopGame}
-                  className="w-full py-5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl transition-colors shadow-md text-base flex items-center justify-center gap-2 cursor-pointer animate-pulse"
+                  className="w-full py-5 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold rounded-2xl transition-colors shadow-md text-lg flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Square size={20} />
+                  <Square size={22} />
                   <span>정지 (STOP)</span>
                 </button>
               ) : (
                 <button
                   onClick={startGame}
-                  className="w-full py-5 bg-[#1a73e8] hover:bg-blue-700 text-white font-bold rounded-2xl transition-colors shadow-md text-base flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-5 bg-[#1a73e8] hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-2xl transition-colors shadow-md text-lg flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Play size={20} />
+                  <Play size={22} />
                   <span>시작 (START)</span>
                 </button>
               )}
@@ -611,14 +615,14 @@ export default function App() {
               <h2 className="text-2xl font-bold text-slate-900 mb-1">도전 결과</h2>
               <p className="text-xs text-slate-500 mb-6">{participantId} {participantName} 학생의 기록입니다.</p>
 
-              {/* 기록 디스플레이 */}
+              {/* 기록 디스플레이 (00.00 형식) */}
               <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-6">
                 <div className="text-xs text-slate-400 mb-1">최종 기록</div>
                 <div className="text-5xl font-black text-slate-900 font-mono mb-2">
-                  {gameResult.stoppedTime.toFixed(2)}s
+                  {formatDisplayTime(gameResult.stoppedTime)}초
                 </div>
                 <div className="text-xs font-semibold text-slate-500">
-                  목표(10.00s)와 오차: <span className="text-[#1a73e8]">{gameResult.diff}초</span>
+                  목표(10.00초)와 오차: <span className="text-[#1a73e8]">{gameResult.diff}초</span>
                 </div>
               </div>
 
@@ -676,7 +680,9 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                   <span className="text-slate-500 text-xs">게임 결과</span>
-                  <span className="font-semibold text-slate-800">{gameResult.rank} ({gameResult.stoppedTime}s)</span>
+                  <span className="font-semibold text-slate-800">
+                    {gameResult.rank} ({formatDisplayTime(gameResult.stoppedTime)}초)
+                  </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                   <span className="text-slate-500 text-xs">획득 간식권</span>
