@@ -20,7 +20,11 @@ import {
   ArrowRight,
   Timer,
   Award,
-  Volume2
+  Volume2,
+  Plus,
+  Minus,
+  Activity,
+  Target
 } from 'lucide-react';
 
 // 방송부 부원 명단 데이터 (검증용)
@@ -46,19 +50,23 @@ export default function App() {
   const [userSession, setUserSession] = useState(null);
   const [error, setError] = useState('');
 
-  // 화면 이동 상태 ('main' | 'treasure_menu' | 'game_register' | 'game_guide' | 'game_play' | 'game_result' | 'settlement')
+  // 화면 이동 상태 ('main' | 'treasure_menu' | 'game_register' | 'game_guide' | 'game_play' | 'game_result' | 'jegi_play' | 'settlement')
   const [activeView, setActiveView] = useState('main');
 
   // 미니게임 참가 학생 정보
   const [participantId, setParticipantId] = useState('');
   const [participantName, setParticipantName] = useState('');
+  const [participantGender, setParticipantGender] = useState('남자');
   const [participantError, setParticipantError] = useState('');
 
-  // 타이머 게임 관련 상태
+  // 10초 타이머 게임 관련 상태
   const [time, setTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [stoppedTime, setStoppedTime] = useState(null);
   const [gameResult, setGameResult] = useState(null);
+
+  // 제기차기 게임 관련 상태
+  const [jegiCount, setJegiCount] = useState(0);
 
   // 결과 화면 마커 애니메이션 위치 상태 (%)
   const [animatedPos, setAnimatedPos] = useState(0);
@@ -165,10 +173,11 @@ export default function App() {
       return;
     }
     setParticipantError('');
+    setJegiCount(0);
     setActiveView('game_guide');
   };
 
-  // 타이머 시작 (0~165초 사이 무작위 위치에서 시작)
+  // 타이머 시작
   const startGame = () => {
     setTime(0);
     setStoppedTime(null);
@@ -258,7 +267,7 @@ export default function App() {
     };
   }, []);
 
-  // 타이머 투명도 계산 (동일한 속도로 선형 투명해지며, 시작 후 정확히 1.0초에 완전히 사라짐)
+  // 타이머 투명도 계산 (1초 후 완전히 사라짐)
   const getTimerOpacity = () => {
     if (!isRunning) return 1;
     if (time >= 1.0) return 0;
@@ -268,6 +277,14 @@ export default function App() {
   // 00.00 포맷 변환
   const formatDisplayTime = (val) => {
     return val.toFixed(2).padStart(5, '0');
+  };
+
+  // 제기차기 통과 여부 및 간식권 계산
+  const getJegiResult = () => {
+    const target = participantGender === '남자' ? 5 : 3;
+    const isPassed = jegiCount >= target;
+    const coupons = isPassed ? 3 : 0;
+    return { target, isPassed, coupons };
   };
 
   // 부원 인증 화면
@@ -360,6 +377,8 @@ export default function App() {
       </div>
     );
   }
+
+  const jegiRes = getJegiResult();
 
   return (
     <div className="min-h-screen bg-[#f8fafd] text-slate-800">
@@ -492,7 +511,7 @@ export default function App() {
                     올인원 테스트
                   </h3>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    10초 맞추기 미니게임 체험 및 간식권 보상 정산 테스트를 진행합니다.
+                    10초 맞추기 + 제기차기 미니게임 체험 및 간식 보상 정산 테스트를 진행합니다.
                   </p>
                 </div>
                 <div className="mt-6">
@@ -506,7 +525,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. 학생 등록 화면 */}
+        {/* 3. 학생 등록 화면 (성별 추가) */}
         {activeView === 'game_register' && (
           <div className="max-w-md mx-auto">
             <button
@@ -555,6 +574,34 @@ export default function App() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">성별</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setParticipantGender('남자')}
+                      className={`py-3.5 rounded-2xl text-sm font-semibold border transition-all cursor-pointer ${
+                        participantGender === '남자'
+                          ? 'bg-blue-50 border-[#1a73e8] text-[#1a73e8]'
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      남자 (목표 5개)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setParticipantGender('여자')}
+                      className={`py-3.5 rounded-2xl text-sm font-semibold border transition-all cursor-pointer ${
+                        participantGender === '여자'
+                          ? 'bg-rose-50 border-rose-500 text-rose-600'
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      여자 (목표 3개)
+                    </button>
+                  </div>
+                </div>
+
                 {participantError && (
                   <div className="flex items-center gap-1.5 text-xs text-red-500 ml-1">
                     <ShieldAlert size={14} />
@@ -587,7 +634,7 @@ export default function App() {
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
               <div className="text-center mb-6">
                 <span className="px-3 py-1 bg-blue-50 text-[#1a73e8] text-xs font-semibold rounded-full">
-                  {participantId} {participantName} 학생
+                  {participantId} {participantName} ({participantGender})
                 </span>
                 <h2 className="text-2xl font-bold text-slate-900 mt-3">10초 맞추기 게임 안내</h2>
               </div>
@@ -638,7 +685,7 @@ export default function App() {
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
               <div className="mb-2 text-xs text-slate-500 font-medium flex items-center justify-center gap-1.5">
-                <span>{participantId} {participantName} 학생 도전 중</span>
+                <span>{participantId} {participantName} ({participantGender}) 도전 중</span>
                 {isRunning && <Volume2 size={14} className="text-blue-500 animate-pulse" />}
               </div>
 
@@ -678,7 +725,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 6. 미니게임 결과 및 평가 화면 (마커 슬라이딩 애니메이션 적용) */}
+        {/* 6. 타이머 결과 화면 -> 다음 제기차기로 이동 */}
         {activeView === 'game_result' && gameResult && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -686,10 +733,9 @@ export default function App() {
                 <Award size={32} />
               </div>
 
-              <h2 className="text-2xl font-bold text-slate-900 mb-1">도전 결과</h2>
+              <h2 className="text-2xl font-bold text-slate-900 mb-1">10초 타이머 결과</h2>
               <p className="text-xs text-slate-500 mb-6">{participantId} {participantName} 학생의 기록입니다.</p>
 
-              {/* 기록 디스플레이 */}
               <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-6">
                 <div className="text-xs text-slate-400 mb-1">최종 기록</div>
                 <div className="text-5xl font-black text-slate-900 font-mono mb-2">
@@ -699,7 +745,7 @@ export default function App() {
                   목표(10.00초)와 오차: <span className="text-[#1a73e8]">{gameResult.diff}초</span>
                 </div>
 
-                {/* 0초 ~ 12초 시각적 트랙 바 */}
+                {/* 타임라인 바 */}
                 <div className="mt-4 pt-4 border-t border-slate-200/60 text-left">
                   <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500 mb-2">
                     <span>타임라인 분석 (0초 ~ 12초)</span>
@@ -709,28 +755,21 @@ export default function App() {
                   </div>
 
                   <div className="relative w-full h-7 bg-slate-200/80 rounded-xl overflow-hidden my-2 border border-slate-300/50">
-                    {/* 근접 구간 영역 */}
                     <div
                       className="absolute top-0 bottom-0 bg-blue-300 -translate-x-1/2"
                       style={{ left: '83.3333%', width: '4.1667%' }}
                       title="근접 구간 (±0.25초)"
                     ></div>
-
-                    {/* 초근접 구간 영역 */}
                     <div
                       className="absolute top-0 bottom-0 bg-emerald-500 z-10 -translate-x-1/2"
                       style={{ left: '83.3333%', width: 'max(0.8333%, 6px)' }}
                       title="초근접 구간 (±0.05초)"
                     ></div>
-
-                    {/* 완벽 목표선 */}
                     <div
                       className="absolute top-0 bottom-0 w-[1.5px] bg-amber-600 z-20 -translate-x-1/2"
                       style={{ left: '83.3333%' }}
                       title="완벽 목표점 (10.00초)"
                     ></div>
-
-                    {/* 사용자 누른 지점 핀 마커 (왼쪽 끝에서 시작하여 부드럽게 위치로 이동) */}
                     <div
                       className="absolute top-0 bottom-0 w-2 bg-red-600 rounded-full z-30 -translate-x-1/2 shadow-md transition-all duration-700 ease-out"
                       style={{
@@ -739,7 +778,6 @@ export default function App() {
                     ></div>
                   </div>
 
-                  {/* 눈금 라벨 */}
                   <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
                     <span>0s</span>
                     <span>3s</span>
@@ -748,30 +786,9 @@ export default function App() {
                     <span className="font-bold text-amber-600">10s🎯</span>
                     <span>12s+</span>
                   </div>
-
-                  {/* 범례 안내 */}
-                  <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-slate-500">
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-blue-300 inline-block"></span>
-                      <span>근접</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                      <span>초근접</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="w-[1.5px] h-3 bg-amber-600 inline-block"></span>
-                      <span>10.00s 완벽</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-red-600 inline-block"></span>
-                      <span>내 기록</span>
-                    </div>
-                  </div>
                 </div>
               </div>
 
-              {/* 등급 판정 박스 */}
               <div className={`p-5 rounded-2xl border mb-6 ${
                 gameResult.rank === '완벽'
                   ? 'bg-amber-50 border-amber-200 text-amber-900'
@@ -781,28 +798,107 @@ export default function App() {
                   ? 'bg-blue-50 border-blue-200 text-blue-900'
                   : 'bg-slate-100 border-slate-200 text-slate-700'
               }`}>
-                <div className="text-xs font-bold uppercase tracking-wider mb-1 opacity-70">판정 결과</div>
-                <div className="text-2xl font-black mb-2">{gameResult.rank}</div>
+                <div className="text-xs font-bold uppercase tracking-wider mb-1 opacity-70">1차 타이머 판정</div>
+                <div className="text-2xl font-black mb-1">{gameResult.rank}</div>
                 <div className="text-xs font-medium">
-                  {gameResult.rank === '완벽' && '🎉 10.00초 완벽 적중! 간식권 3개 획득!'}
-                  {gameResult.rank === '초근접' && '👏 ±0.05초 이내 초근접! 간식권 2개 획득!'}
-                  {gameResult.rank === '근접' && '👍 ±0.25초 이내 근접! 간식권 1개 획득!'}
-                  {gameResult.rank === '실패' && '😅 아쉽습니다! 간식권을 획득하지 못했습니다.'}
+                  {gameResult.rank === '완벽' && '🎉 간식권 3개 획득!'}
+                  {gameResult.rank === '초근접' && '👏 간식권 2개 획득!'}
+                  {gameResult.rank === '근접' && '👍 간식권 1개 획득!'}
+                  {gameResult.rank === '실패' && '😅 간식권 미획득'}
                 </div>
               </div>
 
               <button
-                onClick={() => setActiveView('settlement')}
+                onClick={() => setActiveView('jegi_play')}
                 className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>정산 화면으로 이동</span>
+                <span>다음 단계 (제기차기 측정)</span>
                 <ArrowRight size={16} />
               </button>
             </div>
           </div>
         )}
 
-        {/* 7. 최종 정산 화면 */}
+        {/* 7. NEW: 제기차기 개수 측정 화면 */}
+        {activeView === 'jegi_play' && (
+          <div className="max-w-md mx-auto text-center">
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 bg-amber-50 text-amber-600">
+                <Activity size={28} />
+              </div>
+
+              <h2 className="text-xl font-bold text-slate-900">제기차기 개수 측정</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                현실에서 성공한 제기차기 개수를 기록하세요.
+              </p>
+
+              {/* 성별 기준 목표 안내 */}
+              <div className="my-5 p-4 bg-slate-50 rounded-2xl border border-slate-100 text-xs flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Target size={16} className="text-[#1a73e8]" />
+                  <span className="font-semibold text-slate-700">
+                    {participantGender} 기준 목표: <span className="text-[#1a73e8] font-bold">{jegiRes.target}개 이상</span>
+                  </span>
+                </div>
+                <span className="text-slate-400">(달성 시 간식권 +3개)</span>
+              </div>
+
+              {/* 개수 카운터 디스플레이 */}
+              <div className="my-6">
+                <div className="text-7xl font-black text-slate-900 font-mono tracking-tight my-2">
+                  {jegiCount}
+                  <span className="text-2xl font-bold text-slate-400 ml-1">개</span>
+                </div>
+              </div>
+
+              {/* 카운터 버튼 영역 */}
+              <div className="flex items-center justify-center gap-4 mb-8">
+                <button
+                  type="button"
+                  onClick={() => setJegiCount((prev) => Math.max(0, prev - 1))}
+                  className="w-16 h-16 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-2xl flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <Minus size={24} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJegiCount((prev) => prev + 1)}
+                  className="w-20 h-20 bg-[#1a73e8] hover:bg-blue-700 active:bg-blue-800 text-white rounded-3xl flex items-center justify-center shadow-md transition-colors cursor-pointer"
+                >
+                  <Plus size={32} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJegiCount(0)}
+                  className="w-16 h-16 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-500 rounded-2xl flex items-center justify-center text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  초기화
+                </button>
+              </div>
+
+              {/* 달성 여부 미리보기 상태 */}
+              <div className={`p-4 rounded-2xl text-xs font-bold mb-6 border ${
+                jegiRes.isPassed
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-slate-50 text-slate-500 border-slate-200'
+              }`}>
+                {jegiRes.isPassed
+                  ? `🎉 목표 달성! (간식권 3개 확정)`
+                  : `현재 ${jegiRes.target - jegiCount > 0 ? `${jegiRes.target - jegiCount}개 더 필요` : '미달성'}`}
+              </div>
+
+              <button
+                onClick={() => setActiveView('settlement')}
+                className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>최종 보상 정산하기</span>
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 8. 통합 최종 정산 화면 */}
         {activeView === 'settlement' && gameResult && (
           <div className="max-w-md mx-auto">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
@@ -811,32 +907,38 @@ export default function App() {
                   <Gift size={30} />
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900">최종 보상 정산</h2>
-                <p className="text-xs text-slate-500 mt-1">방송실 간식 지급 확인서</p>
+                <p className="text-xs text-slate-500 mt-1">방송실 간식 지급 최종 확인서</p>
               </div>
 
               <div className="space-y-3 bg-slate-50 rounded-2xl p-5 border border-slate-100 mb-6 text-sm">
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                  <span className="text-slate-500 text-xs">학번</span>
-                  <span className="font-semibold text-slate-800">{participantId}</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                  <span className="text-slate-500 text-xs">이름</span>
-                  <span className="font-semibold text-slate-800">{participantName}</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                  <span className="text-slate-500 text-xs">게임 결과</span>
+                  <span className="text-slate-500 text-xs">학번 / 이름</span>
                   <span className="font-semibold text-slate-800">
-                    {gameResult.rank} ({formatDisplayTime(gameResult.stoppedTime)}초)
+                    {participantId} {participantName} ({participantGender})
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                  <span className="text-slate-500 text-xs">획득 간식권</span>
-                  <span className="font-bold text-[#1a73e8]">{gameResult.coupons}개</span>
+                  <span className="text-slate-500 text-xs">10초 타이머</span>
+                  <span className="font-semibold text-slate-800">
+                    {gameResult.rank} (+{gameResult.coupons}개)
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500 text-xs">제기차기 기록</span>
+                  <span className="font-semibold text-slate-800">
+                    {jegiCount}개 ({jegiRes.isPassed ? '성공 +3개' : '실패 +0개'})
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500 text-xs">총 간식권</span>
+                  <span className="font-bold text-[#1a73e8]">
+                    {gameResult.coupons + jegiRes.coupons}개
+                  </span>
                 </div>
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-slate-700 font-bold text-xs">최종 수령 보상</span>
-                  <span className="font-extrabold text-base text-amber-600">
-                    마이쮸 {gameResult.coupons}개
+                  <span className="font-extrabold text-lg text-amber-600">
+                    마이쮸 {gameResult.coupons + jegiRes.coupons}개
                   </span>
                 </div>
               </div>
@@ -846,7 +948,9 @@ export default function App() {
                   onClick={() => {
                     setParticipantId('');
                     setParticipantName('');
+                    setParticipantGender('남자');
                     setGameResult(null);
+                    setJegiCount(0);
                     setActiveView('game_register');
                   }}
                   className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-2xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
@@ -859,7 +963,9 @@ export default function App() {
                   onClick={() => {
                     setParticipantId('');
                     setParticipantName('');
+                    setParticipantGender('남자');
                     setGameResult(null);
+                    setJegiCount(0);
                     setActiveView('main');
                   }}
                   className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
