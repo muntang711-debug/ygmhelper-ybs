@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, Radio, KeyRound, Sparkles, ShieldAlert, Eye, EyeOff, User, GraduationCap } from 'lucide-react';
+import { Lock, Radio, KeyRound, Sparkles, ShieldAlert, Eye, EyeOff, User, GraduationCap, ShieldCheck } from 'lucide-react';
 
 // 방송부 부원 명단 데이터 (검증용)
 const STUDENT_DATA = {
@@ -7,6 +7,12 @@ const STUDENT_DATA = {
   '2': ['이상혁', '안지환', '김아린', '한유정', '조민서'],
   '3': ['김동건', '최승아', '김지민', '박현준'],
 };
+
+// 관리자 명단 데이터
+const ADMIN_DATA = [
+  { grade: '3', name: '최승아' },
+  { grade: '2', name: '이상혁' },
+];
 
 export default function App() {
   const [grade, setGrade] = useState('');
@@ -21,6 +27,13 @@ export default function App() {
   const handleGradeChange = (e) => {
     setGrade(e.target.value);
     setError('');
+  };
+
+  // 관리자 여부 확인 함수
+  const checkIsAdmin = (gradeVal, nameVal) => {
+    return ADMIN_DATA.some(
+      (admin) => admin.grade === gradeVal && admin.name === nameVal
+    );
   };
 
   // 인증 제출 처리
@@ -49,9 +62,12 @@ export default function App() {
       return;
     }
 
+    // 관리자 여부 체크
+    const isAdmin = checkIsAdmin(grade, trimmedName);
+
     // 모든 검증 통과시 인증 성공
     setIsAuthenticated(true);
-    setUserSession({ grade, name: trimmedName });
+    setUserSession({ grade, name: trimmedName, isAdmin });
     setError('');
   };
 
@@ -164,8 +180,14 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="text-xs text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full font-medium">
-              {userSession?.grade}학년 {userSession?.name}
+            <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full text-xs font-medium text-slate-600">
+              <span>{userSession?.grade}학년 {userSession?.name}</span>
+              {userSession?.isAdmin && (
+                <span className="flex items-center gap-1 bg-indigo-100 text-indigo-700 font-semibold px-2 py-0.5 rounded-md text-[11px]">
+                  <ShieldCheck size={12} />
+                  관리자
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-full text-xs font-medium text-[#1a73e8]">
               <Sparkles size={14} className="text-amber-500" />
