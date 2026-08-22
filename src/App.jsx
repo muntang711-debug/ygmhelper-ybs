@@ -29,8 +29,7 @@ import {
   CheckCircle2,
   XCircle,
   MessageSquare,
-  HelpCircle,
-  Zap
+  HelpCircle
 } from 'lucide-react';
 
 // 방송부 부원 명단 데이터 (검증용)
@@ -57,23 +56,24 @@ const PRON_SENTENCES = [
   '서울특별시 특허허가과 허가과장 허 과장',
 ];
 
-// 사자성어 이어말하기 데이터베이스
+// 사자성어 이어말하기 데이터베이스 (음성 오인식 보정 단어 목록 variants 및 '사자/성어' 추가)
 const FOUR_LETTER_IDIOMS = [
-  { front: '동문', back: '서답', full: '동문서답' },
-  { front: '고진', back: '감래', full: '고진감래' },
-  { front: '초지', back: '일관', full: '초지일관' },
-  { front: '유명', back: '무실', full: '유명무실' },
-  { front: '대기', back: '만성', full: '대기만성' },
-  { front: '작심', back: '삼일', full: '작심삼일' },
-  { front: '이심', back: '전심', full: '이심전심' },
-  { front: '다다', back: '익선', full: '다다익선' },
-  { front: '일석', back: '이조', full: '일석이조' },
-  { front: '십시', back: '일반', full: '십시일반' },
-  { front: '청출', back: '어람', full: '청출어람' },
-  { front: '역지', back: '사지', full: '역지사지' },
-  { front: '동병', back: '상련', full: '동병상련' },
-  { front: '백발', back: '백중', full: '백발백중' },
-  { front: '천고', back: '마비', full: '천고마비' },
+  { front: '사자', back: '성어', full: '사자성어', variants: ['성어', '성어다', '성어'] },
+  { front: '동문', back: '서답', full: '동문서답', variants: ['서답', '스탑', 'stop', '서 답', '소답', '서다'] },
+  { front: '고진', back: '감래', full: '고진감래', variants: ['감래', '감내', '가네', '감래다'] },
+  { front: '초지', back: '일관', full: '초지일관', variants: ['일관', '일과', '일관이다'] },
+  { front: '유명', back: '무실', full: '유명무실', variants: ['무실', '무시', '무실이다'] },
+  { front: '대기', back: '만성', full: '대기만성', variants: ['만성', '망성', '만성이다'] },
+  { front: '작심', back: '삼일', full: '작심삼일', variants: ['삼일', '3일', '삼일이다'] },
+  { front: '이심', back: '전심', full: '이심전심', variants: ['전심', '점심', '전심이다'] },
+  { front: '다다', back: '익선', full: '다다익선', variants: ['익선', '입선', '익선이다'] },
+  { front: '일석', back: '이조', full: '일석이조', variants: ['이조', '2조', '이조다'] },
+  { front: '십시', back: '일반', full: '십시일반', variants: ['일반', '일반이다', '1반'] },
+  { front: '청출', back: '어람', full: '청출어람', variants: ['어람', '어남', '어람이다'] },
+  { front: '역지', back: '사지', full: '역지사지', variants: ['사지', '4지', '사지다'] },
+  { front: '동병', back: '상련', full: '동병상련', variants: ['상련', '상연', '상련이다'] },
+  { front: '백발', back: '백중', full: '백발백중', variants: ['백중', '100중', '백중이다'] },
+  { front: '천고', back: '마비', full: '천고마비', variants: ['마비', '마비다'] },
 ];
 
 // 문자열 유사도(정확도 %) 계산 함수 (Levenshtein Distance)
@@ -411,7 +411,7 @@ export default function App() {
     recognition.start();
   };
 
-  // 음성 인식 시작 (사자성어 이어말하기용)
+  // 음성 인식 시작 (사자성어 이어말하기용 - STT 오인식 보정 적용)
   const startRelaySpeechRecognition = () => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -431,15 +431,24 @@ export default function App() {
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript.trim().replace(/\s+/g, '');
+      const rawTranscript = event.results[0][0].transcript.trim();
+      const cleanTranscript = rawTranscript.toLowerCase().replace(/\s+/g, '');
       const currentItem = relayQuestions[relayIndex];
-      const targetBack = currentItem.back;
-      const targetFull = currentItem.full;
 
-      setRelaySpokenText(event.results[0][0].transcript);
+      setRelaySpokenText(rawTranscript);
 
-      // 인식 단어에 뒤 2글자 또는 전체 4글자가 포함되어 있으면 정답
-      const isRight = transcript.includes(targetBack) || transcript.includes(targetFull);
+      // 정답 판정 (기본 텍스트 + 영문/발음 오인식 variants 매칭)
+      const targetBack = currentItem.back.toLowerCase();
+      const targetFull = currentItem.full.toLowerCase();
+
+      const isDirectMatch =
+        cleanTranscript.includes(targetBack) || cleanTranscript.includes(targetFull);
+
+      const isVariantMatch = currentItem.variants.some((variant) =>
+        cleanTranscript.includes(variant.toLowerCase())
+      );
+
+      const isRight = isDirectMatch || isVariantMatch;
 
       setRelayRoundEvaluated(true);
       setRelayIsCorrect(isRight);
@@ -1099,7 +1108,7 @@ export default function App() {
                 className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>제기차기 개수 입력하기</span>
-                <ArrowRight size={16} />
+                <ArrowRight size={18} />
               </button>
             </div>
           </div>
@@ -1361,7 +1370,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 11. NEW: 사자성어 이어말하기 안내 화면 */}
+        {/* 11. 사자성어 이어말하기 안내 화면 */}
         {activeView === 'relay_guide' && (
           <div className="max-w-lg mx-auto">
             <button
@@ -1388,7 +1397,7 @@ export default function App() {
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">1. 제시된 2글자 확인</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      화면에 제시되는 사자성어의 앞 2글자를 보고 이어질 2글자를 생각하세요.
+                      화면에 제시되는 앞 2글자(예: <b>사자</b>)를 보고 이어질 2글자(예: <b>성어</b>)를 생각하세요.
                     </p>
                   </div>
                 </div>
@@ -1405,7 +1414,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 보상 규칙 */}
                 <div className="p-4 bg-teal-50/60 rounded-2xl border border-teal-100 text-xs text-teal-900">
                   <b>🎁 보상 안내:</b> 총 <b>5문제</b>가 출제되며, <b>성공한 문제 수만큼 간식권(개당 1개, 최대 5개)</b>을 즉시 획득합니다!
                 </div>
@@ -1422,7 +1430,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 12. NEW: 사자성어 이어말하기 게임 진행 화면 */}
+        {/* 12. 사자성어 이어말하기 게임 진행 화면 */}
         {activeView === 'relay_play' && currentRelayItem && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -1485,7 +1493,7 @@ export default function App() {
               {relayRoundEvaluated && (
                 <div className="space-y-3 p-5 bg-slate-50 rounded-2xl border border-slate-100 text-left mb-6">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 block mb-1">인식된 정답</span>
+                    <span className="text-[10px] font-bold text-slate-400 block mb-1">인식된 음성</span>
                     <p className="text-sm font-semibold text-slate-800 bg-white p-3 rounded-xl border border-slate-200">
                       {relaySpokenText || '(인식 실패)'}
                     </p>
@@ -1525,7 +1533,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 13. 통합 최종 정산 화면 (4종 미니게임 전체 합산) */}
+        {/* 13. 통합 최종 정산 화면 */}
         {activeView === 'settlement' && gameResult && (
           <div className="max-w-md mx-auto">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
@@ -1617,7 +1625,7 @@ export default function App() {
                     setRelayScore(0);
                     setActiveView('main');
                   }}
-                  className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <span>메인 목록으로 돌아가기</span>
                 </button>
