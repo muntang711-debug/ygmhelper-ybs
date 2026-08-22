@@ -28,7 +28,9 @@ import {
   Mic,
   CheckCircle2,
   XCircle,
-  MessageSquare
+  MessageSquare,
+  HelpCircle,
+  Zap
 } from 'lucide-react';
 
 // 방송부 부원 명단 데이터 (검증용)
@@ -53,6 +55,25 @@ const PRON_SENTENCES = [
   '간장공장 공장장은 강 공장장이고 된장공장 공장장은 장 공장장이다',
   '고려고 교복은 고급 교복이고 고려고 교복은 고급 원단을 사용했다',
   '서울특별시 특허허가과 허가과장 허 과장',
+];
+
+// 사자성어 이어말하기 데이터베이스
+const FOUR_LETTER_IDIOMS = [
+  { front: '동문', back: '서답', full: '동문서답' },
+  { front: '고진', back: '감래', full: '고진감래' },
+  { front: '초지', back: '일관', full: '초지일관' },
+  { front: '유명', back: '무실', full: '유명무실' },
+  { front: '대기', back: '만성', full: '대기만성' },
+  { front: '작심', back: '삼일', full: '작심삼일' },
+  { front: '이심', back: '전심', full: '이심전심' },
+  { front: '다다', back: '익선', full: '다다익선' },
+  { front: '일석', back: '이조', full: '일석이조' },
+  { front: '십시', back: '일반', full: '십시일반' },
+  { front: '청출', back: '어람', full: '청출어람' },
+  { front: '역지', back: '사지', full: '역지사지' },
+  { front: '동병', back: '상련', full: '동병상련' },
+  { front: '백발', back: '백중', full: '백발백중' },
+  { front: '천고', back: '마비', full: '천고마비' },
 ];
 
 // 문자열 유사도(정확도 %) 계산 함수 (Levenshtein Distance)
@@ -95,7 +116,7 @@ export default function App() {
   const [userSession, setUserSession] = useState(null);
   const [error, setError] = useState('');
 
-  // 화면 이동 상태 ('main' | 'treasure_menu' | 'game_register' | 'game_guide' | 'game_play' | 'game_result' | 'jegi_guide' | 'jegi_play' | 'pron_guide' | 'pron_play' | 'settlement')
+  // 화면 이동 상태 ('main' | 'treasure_menu' | 'game_register' | 'game_guide' | 'game_play' | 'game_result' | 'jegi_guide' | 'jegi_play' | 'pron_guide' | 'pron_play' | 'relay_guide' | 'relay_play' | 'settlement')
   const [activeView, setActiveView] = useState('main');
 
   // 미니게임 참가 학생 정보
@@ -119,6 +140,16 @@ export default function App() {
   const [spokenText, setSpokenText] = useState('');
   const [pronAccuracy, setPronAccuracy] = useState(null);
   const [pronError, setPronError] = useState('');
+
+  // 사자성어 이어말하기 게임 관련 상태
+  const [relayQuestions, setRelayQuestions] = useState([]);
+  const [relayIndex, setRelayIndex] = useState(0);
+  const [relayScore, setRelayScore] = useState(0);
+  const [relaySpokenText, setRelaySpokenText] = useState('');
+  const [isRelayListening, setIsRelayListening] = useState(false);
+  const [relayRoundEvaluated, setRelayRoundEvaluated] = useState(false);
+  const [relayIsCorrect, setRelayIsCorrect] = useState(false);
+  const [relayError, setRelayError] = useState('');
 
   // 결과 화면 마커 애니메이션 위치 상태 (%)
   const [animatedPos, setAnimatedPos] = useState(0);
@@ -217,18 +248,16 @@ export default function App() {
       return;
     }
 
-    // 마이크 권한 요청 및 검사 (허용되지 않으면 다음으로 이동 불가)
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setParticipantError('현재 브라우저에서 마이크 권한 요청을 지원하지 않습니다.');
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // 테스트 스트림 종료
       stream.getTracks().forEach((track) => track.stop());
     } catch (err) {
       console.error('마이크 권한 거부:', err);
-      setParticipantError('발음 테스트 진행을 위해 마이크 권한 허용이 필수입니다. 브라우저의 마이크 사용을 허용해 주세요.');
+      setParticipantError('음성 테스트 진행을 위해 마이크 권한 허용이 필수입니다. 브라우저의 마이크 사용을 허용해 주세요.');
       return;
     }
 
@@ -328,7 +357,19 @@ export default function App() {
     setPronError('');
   };
 
-  // 음성 인식 시작 (Web Speech API)
+  // 사자성어 5문제 랜덤 뽑기 설정
+  const setupRelayGame = () => {
+    const shuffled = [...FOUR_LETTER_IDIOMS].sort(() => 0.5 - Math.random());
+    setRelayQuestions(shuffled.slice(0, 5));
+    setRelayIndex(0);
+    setRelayScore(0);
+    setRelaySpokenText('');
+    setRelayRoundEvaluated(false);
+    setRelayIsCorrect(false);
+    setRelayError('');
+  };
+
+  // 음성 인식 시작 (발음 테스트용)
   const startSpeechRecognition = () => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -359,11 +400,7 @@ export default function App() {
     recognition.onerror = (event) => {
       console.error('음성 인식 오류:', event.error);
       setIsListening(false);
-      if (event.error === 'not-allowed') {
-        setPronError('마이크 권한이 차단되어 있습니다. 주소창의 마이크 설정을 확인해주세요.');
-      } else {
-        setPronError('음성 인식에 실패했습니다. 다시 크게 말씀해 주세요.');
-      }
+      setPronError('음성 인식에 실패했습니다. 다시 크게 말씀해 주세요.');
     };
 
     recognition.onend = () => {
@@ -372,6 +409,71 @@ export default function App() {
 
     recognitionRef.current = recognition;
     recognition.start();
+  };
+
+  // 음성 인식 시작 (사자성어 이어말하기용)
+  const startRelaySpeechRecognition = () => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setRelayError('현재 브라우저가 음성 인식을 지원하지 않습니다.');
+      return;
+    }
+
+    setRelayError('');
+    setIsRelayListening(true);
+    setRelaySpokenText('');
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ko-KR';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript.trim().replace(/\s+/g, '');
+      const currentItem = relayQuestions[relayIndex];
+      const targetBack = currentItem.back;
+      const targetFull = currentItem.full;
+
+      setRelaySpokenText(event.results[0][0].transcript);
+
+      // 인식 단어에 뒤 2글자 또는 전체 4글자가 포함되어 있으면 정답
+      const isRight = transcript.includes(targetBack) || transcript.includes(targetFull);
+
+      setRelayRoundEvaluated(true);
+      setRelayIsCorrect(isRight);
+
+      if (isRight) {
+        setRelayScore((prev) => prev + 1);
+      }
+      setIsRelayListening(false);
+    };
+
+    recognition.onerror = (event) => {
+      console.error('사자성어 음성 인식 오류:', event.error);
+      setIsRelayListening(false);
+      setRelayError('음성 인식에 실패했습니다. 다시 크게 말씀해 주세요.');
+    };
+
+    recognition.onend = () => {
+      setIsRelayListening(false);
+    };
+
+    recognition.start();
+  };
+
+  // 사자성어 다음 문제 이동
+  const handleNextRelayQuestion = () => {
+    if (relayIndex + 1 < relayQuestions.length) {
+      setRelayIndex((prev) => prev + 1);
+      setRelaySpokenText('');
+      setRelayRoundEvaluated(false);
+      setRelayIsCorrect(false);
+      setRelayError('');
+    } else {
+      setActiveView('settlement');
+    }
   };
 
   // 타이머 투명도 계산
@@ -394,7 +496,7 @@ export default function App() {
     return { target, isPassed, coupons };
   };
 
-  // 발음 테스트 통과 여부 및 간식권 세분화 계산 (100: 3개 / 95+: 2개 / 90+: 1개)
+  // 발음 테스트 통과 여부 및 간식권 계산
   const getPronResult = () => {
     if (pronAccuracy === null) return { rank: '미도전', coupons: 0 };
     if (pronAccuracy === 100) return { rank: '완벽 (100%)', coupons: 3 };
@@ -496,6 +598,7 @@ export default function App() {
 
   const jegiRes = getJegiResult();
   const pronRes = getPronResult();
+  const currentRelayItem = relayQuestions[relayIndex];
 
   return (
     <div className="min-h-screen bg-[#f8fafd] text-slate-800">
@@ -628,7 +731,7 @@ export default function App() {
                     올인원 테스트
                   </h3>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    타이머 + 제기차기 + 발음 테스트 3종 미니게임 체험 및 통합 정산을 진행합니다.
+                    타이머 + 제기차기 + 발음 + 사자성어 4종 미니게임 체험 및 통합 정산을 진행합니다.
                   </p>
                 </div>
                 <div className="mt-6">
@@ -642,7 +745,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. 학생 등록 화면 (마이크 권한 사전 검사 필수) */}
+        {/* 3. 학생 등록 화면 */}
         {activeView === 'game_register' && (
           <div className="max-w-md mx-auto">
             <button
@@ -721,7 +824,7 @@ export default function App() {
 
                 <div className="p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-100 text-xs text-indigo-900 flex items-center gap-2">
                   <Mic size={16} className="shrink-0 text-indigo-600" />
-                  <span>3단계 발음 테스트 진행을 위해 마이크 권한 승인이 필요합니다.</span>
+                  <span>음성 테스트(발음/사자성어) 진행을 위해 마이크 권한 승인이 필요합니다.</span>
                 </div>
 
                 {participantError && (
@@ -1245,17 +1348,184 @@ export default function App() {
               )}
 
               <button
-                onClick={() => setActiveView('settlement')}
+                onClick={() => {
+                  setupRelayGame();
+                  setActiveView('relay_guide');
+                }}
                 className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>최종 보상 정산하기</span>
+                <span>다음 단계 (사자성어 이어말하기)</span>
                 <ArrowRight size={16} />
               </button>
             </div>
           </div>
         )}
 
-        {/* 11. 통합 최종 정산 화면 */}
+        {/* 11. NEW: 사자성어 이어말하기 안내 화면 */}
+        {activeView === 'relay_guide' && (
+          <div className="max-w-lg mx-auto">
+            <button
+              onClick={() => setActiveView('pron_play')}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 mb-6 transition-colors cursor-pointer"
+            >
+              <ChevronLeft size={16} />
+              <span>발음 테스트로 돌아가기</span>
+            </button>
+
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
+              <div className="text-center mb-6">
+                <span className="px-3 py-1 bg-teal-50 text-teal-600 text-xs font-semibold rounded-full">
+                  4단계: 사자성어 이어말하기
+                </span>
+                <h2 className="text-2xl font-bold text-slate-900 mt-3">사자성어 이어말하기 안내</h2>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="w-10 h-10 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+                    <HelpCircle size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">1. 제시된 2글자 확인</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      화면에 제시되는 사자성어의 앞 2글자를 보고 이어질 2글자를 생각하세요.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="w-10 h-10 bg-blue-50 text-[#1a73e8] rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+                    <Mic size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">2. 음성으로 정답 말하기</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      [말하기] 버튼을 누른 후 뒤 2글자(또는 4글자 전체)를 크게 말해주세요.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 보상 규칙 */}
+                <div className="p-4 bg-teal-50/60 rounded-2xl border border-teal-100 text-xs text-teal-900">
+                  <b>🎁 보상 안내:</b> 총 <b>5문제</b>가 출제되며, <b>성공한 문제 수만큼 간식권(개당 1개, 최대 5개)</b>을 즉시 획득합니다!
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActiveView('relay_play')}
+                className="w-full py-4 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>이어말하기 시작 (총 5문제)</span>
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 12. NEW: 사자성어 이어말하기 게임 진행 화면 */}
+        {activeView === 'relay_play' && currentRelayItem && (
+          <div className="max-w-md mx-auto text-center">
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
+              {/* 진행도 표시 */}
+              <div className="flex items-center justify-between mb-4">
+                <span className="px-3 py-1 bg-teal-50 text-teal-700 text-xs font-bold rounded-full">
+                  문제 {relayIndex + 1} / 5
+                </span>
+                <span className="text-xs font-semibold text-slate-500">
+                  현재 성공: <b className="text-teal-600">{relayScore}개</b>
+                </span>
+              </div>
+
+              <h2 className="text-xl font-bold text-slate-900 mb-6">뒤에 올 2글자를 말하세요!</h2>
+
+              {/* 문제 디스플레이 카드 */}
+              <div className="p-8 bg-slate-50 rounded-3xl border border-slate-200 my-4">
+                <div className="text-5xl font-black text-slate-900 font-mono tracking-widest flex items-center justify-center gap-2">
+                  <span className="text-[#1a73e8]">{currentRelayItem.front}</span>
+                  <span className="text-slate-300">
+                    {relayRoundEvaluated
+                      ? currentRelayItem.back
+                      : '??'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 음성 정답 버튼 */}
+              <div className="my-6">
+                {isRelayListening ? (
+                  <div className="py-5 bg-teal-50 border border-teal-200 rounded-2xl flex flex-col items-center justify-center gap-2 animate-pulse">
+                    <Mic size={32} className="text-teal-600" />
+                    <span className="text-xs font-bold text-teal-700">듣고 있습니다... 정답을 말씀하세요!</span>
+                  </div>
+                ) : (
+                  <button
+                    disabled={relayRoundEvaluated}
+                    onClick={startRelaySpeechRecognition}
+                    className={`w-full py-4 font-bold rounded-2xl transition-colors shadow-md text-base flex items-center justify-center gap-2 ${
+                      relayRoundEvaluated
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        : 'bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white cursor-pointer'
+                    }`}
+                  >
+                    <Mic size={20} />
+                    <span>{relaySpokenText ? '다시 정답 말하기' : '정답 말하기 (음성 인식)'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* 에러 메시지 */}
+              {relayError && (
+                <div className="flex items-center gap-1.5 text-xs text-red-500 mb-4 justify-center">
+                  <ShieldAlert size={14} />
+                  <span>{relayError}</span>
+                </div>
+              )}
+
+              {/* 라운드 결과 판정 표시 */}
+              {relayRoundEvaluated && (
+                <div className="space-y-3 p-5 bg-slate-50 rounded-2xl border border-slate-100 text-left mb-6">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block mb-1">인식된 정답</span>
+                    <p className="text-sm font-semibold text-slate-800 bg-white p-3 rounded-xl border border-slate-200">
+                      {relaySpokenText || '(인식 실패)'}
+                    </p>
+                  </div>
+
+                  <div className={`p-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 ${
+                    relayIsCorrect
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-red-50 text-red-600 border border-red-200'
+                  }`}>
+                    {relayIsCorrect ? (
+                      <>
+                        <CheckCircle2 size={16} />
+                        <span>정답입니다! ({currentRelayItem.full})</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle size={16} />
+                        <span>오답입니다! (정답: {currentRelayItem.full})</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 다음 문제 이동 버튼 */}
+              {relayRoundEvaluated && (
+                <button
+                  onClick={handleNextRelayQuestion}
+                  className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>{relayIndex + 1 < 5 ? '다음 문제' : '최종 정산으로 이동'}</span>
+                  <ArrowRight size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 13. 통합 최종 정산 화면 (4종 미니게임 전체 합산) */}
         {activeView === 'settlement' && gameResult && (
           <div className="max-w-md mx-auto">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
@@ -1293,15 +1563,21 @@ export default function App() {
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500 text-xs">사자성어 이어말하기</span>
+                  <span className="font-semibold text-slate-800">
+                    {relayScore} / 5개 성공 (+{relayScore}개)
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                   <span className="text-slate-500 text-xs">총 간식권</span>
                   <span className="font-bold text-[#1a73e8]">
-                    {gameResult.coupons + jegiRes.coupons + pronRes.coupons}개
+                    {gameResult.coupons + jegiRes.coupons + pronRes.coupons + relayScore}개
                   </span>
                 </div>
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-slate-700 font-bold text-xs">최종 수령 보상</span>
                   <span className="font-extrabold text-lg text-amber-600">
-                    마이쮸 {gameResult.coupons + jegiRes.coupons + pronRes.coupons}개
+                    마이쮸 {gameResult.coupons + jegiRes.coupons + pronRes.coupons + relayScore}개
                   </span>
                 </div>
               </div>
@@ -1316,6 +1592,9 @@ export default function App() {
                     setJegiCount(0);
                     setSpokenText('');
                     setPronAccuracy(null);
+                    setRelayQuestions([]);
+                    setRelayIndex(0);
+                    setRelayScore(0);
                     setActiveView('game_register');
                   }}
                   className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-2xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
@@ -1333,6 +1612,9 @@ export default function App() {
                     setJegiCount(0);
                     setSpokenText('');
                     setPronAccuracy(null);
+                    setRelayQuestions([]);
+                    setRelayIndex(0);
+                    setRelayScore(0);
                     setActiveView('main');
                   }}
                   className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
