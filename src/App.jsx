@@ -26,7 +26,6 @@ import {
   Activity,
   Target,
   Mic,
-  MicOff,
   CheckCircle2,
   XCircle,
   MessageSquare
@@ -313,6 +312,24 @@ export default function App() {
     setPronError('');
   };
 
+  // 사전 마이크 권한 요청 후 테스트 진입
+  const requestMicPermissionAndStart = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setPronError('현재 브라우저에서 마이크 권한 요청을 지원하지 않습니다.');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 권한 확인 후 트랙 즉시 종료
+      stream.getTracks().forEach((track) => track.stop());
+      setPronError('');
+      setActiveView('pron_play');
+    } catch (err) {
+      console.error('마이크 권한 거부:', err);
+      setPronError('마이크 권한이 거부되었습니다. 주소창의 마이크 설정을 허용으로 변경해 주세요.');
+    }
+  };
+
   // 음성 인식 시작 (Web Speech API)
   const startSpeechRecognition = () => {
     const SpeechRecognition =
@@ -345,9 +362,9 @@ export default function App() {
       console.error('음성 인식 오류:', event.error);
       setIsListening(false);
       if (event.error === 'not-allowed') {
-        setPronError('마이크 접근 권한이 거부되었습니다. 브라우저 마이크 허용을 확인해주세요.');
+        setPronError('마이크 권한이 거부되었습니다. 마이크 설정을 확인해주세요.');
       } else {
-        setPronError('음성 인식 중 오류가 발생했습니다. 다시 시도해 주세요.');
+        setPronError('음성 인식에 실패했습니다. 다시 크게 말씀해 주세요.');
       }
     };
 
@@ -379,11 +396,13 @@ export default function App() {
     return { target, isPassed, coupons };
   };
 
-  // 발음 테스트 통과 여부 및 간식권 계산 (75% 이상 성공 시 간식권 3개)
+  // 발음 테스트 통과 여부 및 간식권 세분화 계산 (100: 3개 / 95+: 2개 / 90+: 1개)
   const getPronResult = () => {
-    const isPassed = pronAccuracy !== null && pronAccuracy >= 75;
-    const coupons = isPassed ? 3 : 0;
-    return { isPassed, coupons };
+    if (pronAccuracy === null) return { rank: '미도전', coupons: 0 };
+    if (pronAccuracy === 100) return { rank: '완벽 (100%)', coupons: 3 };
+    if (pronAccuracy >= 95) return { rank: '우수 (95% 이상)', coupons: 2 };
+    if (pronAccuracy >= 90) return { rank: '통과 (90% 이상)', coupons: 1 };
+    return { rank: '실패 (90% 미만)', coupons: 0 };
   };
 
   // 부원 인증 화면
@@ -1061,7 +1080,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 9. NEW: 발음 정확도 테스트 시작 전 안내 화면 */}
+        {/* 9. 발음 정확도 테스트 사전 권한 체크 안내 화면 */}
         {activeView === 'pron_guide' && (
           <div className="max-w-lg mx-auto">
             <button
@@ -1080,7 +1099,7 @@ export default function App() {
                 <h2 className="text-2xl font-bold text-slate-900 mt-3">발음 정확하게 말하기 안내</h2>
               </div>
 
-              <div className="space-y-4 mb-8">
+              <div className="space-y-4 mb-6">
                 <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
                     <MessageSquare size={20} />
@@ -1088,7 +1107,7 @@ export default function App() {
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">1. 문구 확인 후 말하기</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      화면에 제시되는 난이도 높은 문구를 똑똑히 읽어 음성 인식 마이크에 대고 말하세요.
+                      화면에 제시되는 어려운 난이도의 문구를 마이크에 대고 크게 읽으세요.
                     </p>
                   </div>
                 </div>
@@ -1098,32 +1117,44 @@ export default function App() {
                     <Mic size={20} />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">2. 자동 발음 정확도 분석</h4>
+                    <h4 className="text-sm font-bold text-slate-900">2. 마이크 권한 필수</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      시스템이 음성을 분석하여 일치율(%)을 계산합니다.
+                      시작 버튼 클릭 시 나오는 마이크 권한 요청 팝업에서 <b>'허용'</b>을 선택해 주세요.
                     </p>
                   </div>
                 </div>
 
+                {/* 변경된 보상 등급표 */}
                 <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-100 text-xs text-purple-900">
-                  <b>💡 성공 기준:</b> 발음 일치율 <b>75% 이상 달성 시 간식권 3개</b> 추가 지급!
+                  <b className="block mb-1">🎁 등급별 보상 세부 안내:</b>
+                  <ul className="list-disc list-inside space-y-0.5 text-slate-700">
+                    <li><b>100% (완벽 적중)</b> : 간식권 3개</li>
+                    <li><b>95% 이상</b> : 간식권 2개</li>
+                    <li><b>90% 이상</b> : 간식권 1개</li>
+                    <li><b>90% 미만</b> : 간식권 0개</li>
+                  </ul>
                 </div>
               </div>
 
+              {pronError && (
+                <div className="flex items-center gap-1.5 text-xs text-red-500 mb-4 justify-center bg-red-50 p-3 rounded-xl border border-red-200">
+                  <ShieldAlert size={16} />
+                  <span>{pronError}</span>
+                </div>
+              )}
+
               <button
-                onClick={() => {
-                  setActiveView('pron_play');
-                }}
-                className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+                onClick={requestMicPermissionAndStart}
+                className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>발음 테스트 시작</span>
-                <ArrowRight size={18} />
+                <Mic size={18} />
+                <span>마이크 권한 확인 및 시작</span>
               </button>
             </div>
           </div>
         )}
 
-        {/* 10. NEW: 발음 정확도 측정 진행 화면 */}
+        {/* 10. 발음 정확도 측정 진행 화면 */}
         {activeView === 'pron_play' && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -1133,7 +1164,7 @@ export default function App() {
 
               <h2 className="text-xl font-bold text-slate-900">발음 정확하게 말하기</h2>
               <p className="text-xs text-slate-500 mt-1 mb-6">
-                [말하기 버튼]을 누르고 아래 문장을 크게 읽으세요.
+                [말하기 버튼]을 누르고 아래 제시문을 또박또박 읽으세요.
               </p>
 
               {/* 제시된 문장 카드 */}
@@ -1186,7 +1217,7 @@ export default function App() {
                     <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-600">발음 정확도</span>
                       <span className={`text-2xl font-black font-mono ${
-                        pronAccuracy >= 75 ? 'text-emerald-600' : 'text-red-500'
+                        pronAccuracy >= 90 ? 'text-emerald-600' : 'text-red-500'
                       }`}>
                         {pronAccuracy}%
                       </span>
@@ -1195,22 +1226,22 @@ export default function App() {
                 </div>
               )}
 
-              {/* 달성 상태 표시 */}
+              {/* 달성 등급 상태 표시 */}
               {pronAccuracy !== null && (
                 <div className={`p-4 rounded-2xl text-xs font-bold mb-6 border flex items-center justify-center gap-2 ${
-                  pronRes.isPassed
+                  pronAccuracy >= 90
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     : 'bg-red-50 text-red-600 border-red-200'
                 }`}>
-                  {pronRes.isPassed ? (
+                  {pronAccuracy >= 90 ? (
                     <>
                       <CheckCircle2 size={16} />
-                      <span>발음 테스트 성공! (간식권 +3개)</span>
+                      <span>{pronRes.rank} (간식권 +{pronRes.coupons}개)</span>
                     </>
                   ) : (
                     <>
                       <XCircle size={16} />
-                      <span>75% 미달성 (간식권 미획득)</span>
+                      <span>{pronRes.rank} (간식권 미획득)</span>
                     </>
                   )}
                 </div>
@@ -1227,7 +1258,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 11. 통합 최종 정산 화면 (타이머 + 제기차기 + 발음 합산) */}
+        {/* 11. 통합 최종 정산 화면 */}
         {activeView === 'settlement' && gameResult && (
           <div className="max-w-md mx-auto">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
@@ -1261,7 +1292,7 @@ export default function App() {
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                   <span className="text-slate-500 text-xs">발음 테스트</span>
                   <span className="font-semibold text-slate-800">
-                    {pronAccuracy !== null ? `${pronAccuracy}%` : '미도전'} ({pronRes.isPassed ? '성공 +3개' : '실패 +0개'})
+                    {pronAccuracy !== null ? `${pronAccuracy}%` : '미도전'} (+{pronRes.coupons}개)
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
