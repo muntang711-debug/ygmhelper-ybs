@@ -60,6 +60,9 @@ export default function App() {
   const [stoppedTime, setStoppedTime] = useState(null);
   const [gameResult, setGameResult] = useState(null);
 
+  // 결과 화면 마커 애니메이션 위치 상태 (%)
+  const [animatedPos, setAnimatedPos] = useState(0);
+
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const audioRef = useRef(null);
@@ -92,6 +95,18 @@ export default function App() {
       setIsRunning(false);
     }
   }, [activeView]);
+
+  // 결과 화면 진입 시 마커 슬라이딩 애니메이션 실행
+  useEffect(() => {
+    if (activeView === 'game_result' && gameResult) {
+      setAnimatedPos(0);
+      const timer = setTimeout(() => {
+        const targetPos = Math.min((gameResult.stoppedTime / 12) * 100, 100);
+        setAnimatedPos(targetPos);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [activeView, gameResult]);
 
   // 학년 변경 시 입력값 초기화
   const handleGradeChange = (e) => {
@@ -663,7 +678,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 6. 미니게임 결과 및 평가 화면 (대칭 보장 및 초슬림 완벽 목표선) */}
+        {/* 6. 미니게임 결과 및 평가 화면 (마커 슬라이딩 애니메이션 적용) */}
         {activeView === 'game_result' && gameResult && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -694,32 +709,32 @@ export default function App() {
                   </div>
 
                   <div className="relative w-full h-7 bg-slate-200/80 rounded-xl overflow-hidden my-2 border border-slate-300/50">
-                    {/* 근접 구간 영역 (±0.25초: 9.75s ~ 10.25s, 10.00초 정중앙 정렬로 완전 대칭) */}
+                    {/* 근접 구간 영역 */}
                     <div
                       className="absolute top-0 bottom-0 bg-blue-300 -translate-x-1/2"
                       style={{ left: '83.3333%', width: '4.1667%' }}
                       title="근접 구간 (±0.25초)"
                     ></div>
 
-                    {/* 초근접 구간 영역 (±0.05초: 9.95s ~ 10.05s, 최소 6px 정중앙 정렬로 선명하게 표시) */}
+                    {/* 초근접 구간 영역 */}
                     <div
                       className="absolute top-0 bottom-0 bg-emerald-500 z-10 -translate-x-1/2"
                       style={{ left: '83.3333%', width: 'max(0.8333%, 6px)' }}
                       title="초근접 구간 (±0.05초)"
                     ></div>
 
-                    {/* 완벽 목표선 (10.00초 정중앙 1.5px 초슬림 바) */}
+                    {/* 완벽 목표선 */}
                     <div
                       className="absolute top-0 bottom-0 w-[1.5px] bg-amber-600 z-20 -translate-x-1/2"
                       style={{ left: '83.3333%' }}
                       title="완벽 목표점 (10.00초)"
                     ></div>
 
-                    {/* 사용자 누른 지점 핀 마커 */}
+                    {/* 사용자 누른 지점 핀 마커 (왼쪽 끝에서 시작하여 부드럽게 위치로 이동) */}
                     <div
-                      className="absolute top-0 bottom-0 w-2 bg-red-600 rounded-full z-30 -translate-x-1/2 shadow-md transition-all duration-500"
+                      className="absolute top-0 bottom-0 w-2 bg-red-600 rounded-full z-30 -translate-x-1/2 shadow-md transition-all duration-700 ease-out"
                       style={{
-                        left: `${Math.min((gameResult.stoppedTime / 12) * 100, 100)}%`
+                        left: `${animatedPos}%`
                       }}
                     ></div>
                   </div>
