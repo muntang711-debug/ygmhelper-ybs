@@ -444,7 +444,7 @@ export default function App() {
   const currentRelayItem = relayQuestions[relayIndex];
 
   return (
-    <div className="min-h-screen bg-[#f8fafd] text-slate-800">
+    <div className="min-h-screen bg-[#f8fafd] text-slate-800 font-sans">
       {/* 헤더 */}
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-4 sm:px-6 py-3 sm:py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
@@ -1276,7 +1276,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 12. 사자성어 이어말하기 게임 진행 화면 (수동 판정 및 제시어/정답어 명확한 구분) */}
+        {/* 12. 사자성어 이어말하기 게임 진행 화면 (서체 수정: font-sans 및 고딕 계열 적용) */}
         {activeView === 'relay_play' && currentRelayItem && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -1298,7 +1298,7 @@ export default function App() {
                   <span className="text-[11px] font-bold text-blue-600 bg-blue-100 px-2.5 py-1 rounded-md inline-block mb-2">
                     📢 학생에게 보여줄 제시어
                   </span>
-                  <div className="text-4xl font-black text-blue-600 tracking-wider font-mono">
+                  <div className="text-5xl font-extrabold text-blue-600 tracking-wider">
                     {currentRelayItem.front}
                   </div>
                 </div>
@@ -1307,7 +1307,7 @@ export default function App() {
                   <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-md inline-block mb-2">
                     🎯 학생이 말해야 할 정답
                   </span>
-                  <div className="text-4xl font-black text-emerald-600 tracking-wider font-mono">
+                  <div className="text-5xl font-extrabold text-emerald-600 tracking-wider">
                     {currentRelayItem.back}
                   </div>
                 </div>
