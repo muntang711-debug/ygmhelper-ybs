@@ -33,7 +33,8 @@ import {
   X,
   Server,
   Wifi,
-  AlertCircle
+  AlertCircle,
+  LogOut
 } from 'lucide-react';
 import { db } from './firebase';
 import { ref, onValue, set, update, remove, onDisconnect } from 'firebase/database';
@@ -62,11 +63,6 @@ const PRON_SENTENCES = [
   '서울특별시 특허허가과 허가과장 허 과장',
 ];
 
-// 사자성어 데이터베이스
-const FOUR_LETTER_IDIOMS = [
-  { front: '사자', back: '성어', full: '사자성어' },
-];
-
 export default function App() {
   // 인증 관련 상태
   const [grade, setGrade] = useState('');
@@ -79,9 +75,15 @@ export default function App() {
 
   // 메인 화면 및 뷰 제어 상태
   const [activeView, setActiveView] = useState('main'); 
+  // 'main' | 'treasure_menu' | 'network_menu' | 'station_app' | 'aio_register' 등
 
   // 서비스 연동 기기 역할 상태
   const [stationRole, setStationRole] = useState('');
+
+  // 역할 이탈 보호 모달 상태
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+  const [exitCodeInput, setExitCodeInput] = useState('');
+  const [exitError, setExitError] = useState('');
 
   // 파이어베이스 실시간 수신 상태
   const [globalParticipants, setGlobalParticipants] = useState({});
@@ -113,10 +115,7 @@ export default function App() {
   const [pronRankName, setPronRankName] = useState('');
 
   // 사자성어 이어말하기 게임 관련 상태
-  const [relayIndex, setRelayIndex] = useState(0);
   const [relayScore, setRelayScore] = useState(0);
-  const [relayRoundEvaluated, setRelayRoundEvaluated] = useState(false);
-  const [relayIsCorrect, setRelayIsCorrect] = useState(false);
 
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
@@ -141,22 +140,19 @@ export default function App() {
     };
   }, []);
 
-  // 기기 핑 및 실시간 서버 등록 (즉시 등록 처리로 튕김 완벽 방지)
+  // 기기 핑 및 실시간 서버 등록
   useEffect(() => {
     if (!stationRole) return;
 
     const deviceRef = ref(db, `connectedStations/${deviceId}`);
 
-    // 역할 선택 즉시 서버에 동기적 등록
     set(deviceRef, {
       role: stationRole,
       lastActive: Date.now(),
     });
 
-    // 접속 해제 시 서버에서 삭제
     onDisconnect(deviceRef).remove();
 
-    // 2초마다 핑 갱신
     const interval = setInterval(() => {
       set(deviceRef, {
         role: stationRole,
@@ -220,6 +216,21 @@ export default function App() {
     setError('');
   };
 
+  // 부스 탈출/역할 변경 이탈 인증 처리
+  const handleConfirmExitRole = (e) => {
+    e.preventDefault();
+    if (exitCodeInput.trim() === 'ybs2026') {
+      setIsExitModalOpen(false);
+      setExitCodeInput('');
+      setExitError('');
+      setStationRole('');
+      setSelectedStudentId('');
+      setActiveView('network_menu');
+    } else {
+      setExitError('인증 코드가 올바르지 않습니다.');
+    }
+  };
+
   // 부스별 플레이 자격 요건 검증 (앞 단계 완료 필수)
   const canPlayStation = (student, role) => {
     if (!student) return false;
@@ -232,24 +243,24 @@ export default function App() {
     return false;
   };
 
-  // 서버 데이터 및 기기 접속 완전 초기화 (관리자 전용)
+  // 전체 초기화 (관리자 전용)
   const handleResetAllData = () => {
     if (!userSession?.isAdmin) {
       alert('관리자만 초기화할 수 있습니다.');
       return;
     }
-    if (window.confirm('서버의 모든 학생 참가 기록, 점수, 기기 역할 접속까지 완전히 초기화하시겠습니까?')) {
+    if (window.confirm('모든 참가자 데이터, 점수, 기기 역할까지 완전히 초기화하시겠습니까?')) {
       remove(ref(db, 'participants'));
       remove(ref(db, 'connectedStations'));
       setStationRole('');
       setSelectedStudentId('');
       setActiveView('network_menu');
-      alert('파이어베이스 전체 데이터가 성공적으로 초기화되었습니다.');
+      alert('모든 데이터가 성공적으로 초기화되었습니다.');
     }
   };
 
-  // 1. 정보입력대: 서버 학생 등록
-  const handleRegisterToFirebase = (e) => {
+  // 1. 정보입력대: 학생 등록
+  const handleRegisterStudent = (e) => {
     e.preventDefault();
     const cleanId = participantId.trim();
     const cleanName = participantName.trim();
@@ -275,7 +286,7 @@ export default function App() {
     setParticipantId('');
     setParticipantName('');
     setParticipantError('');
-    alert(`[${cleanName}] 학생이 성공적으로 등록되었습니다.`);
+    alert(`[${cleanName}] 학생이 등록되었습니다.`);
   };
 
   // 타이머 게임 로직
@@ -321,14 +332,19 @@ export default function App() {
 
     const resultObj = { stoppedTime: roundedTime, diff: diff.toFixed(2), rank, coupons };
     setGameResult(resultObj);
-
-    if (stationRole === 'timer' && selectedStudentId) {
-      update(ref(db, `participants/${selectedStudentId}/scores/timer`), resultObj);
-    }
   };
 
-  // 제기차기 결과 서버 저장
-  const handleSaveJegiScore = () => {
+  // 타이머 최종 완료 후 학생 목록으로 복귀
+  const handleCompleteTimer = () => {
+    if (!selectedStudentId || !gameResult) return;
+    update(ref(db, `participants/${selectedStudentId}/scores/timer`), gameResult);
+    setSelectedStudentId('');
+    setTime(0);
+    setGameResult(null);
+  };
+
+  // 제기차기 결과 완료 후 학생 목록으로 복귀
+  const handleCompleteJegi = () => {
     if (!selectedStudentId) return;
     const student = globalParticipants[selectedStudentId];
     const target = student?.gender === '남자' ? 5 : 3;
@@ -340,59 +356,58 @@ export default function App() {
       isPassed,
       coupons,
     });
-    alert('제기차기 기록이 서버에 저장되었습니다!');
+
+    setSelectedStudentId('');
+    setJegiCount(0);
   };
 
-  // 발음 테스트 결과 서버 저장
-  const handleSavePronScore = (coupons, rankName) => {
-    setPronCoupons(coupons);
-    setPronRankName(rankName);
+  // 발음 테스트 결과 완료 후 학생 목록으로 복귀
+  const handleCompletePron = (coupons, rankName) => {
+    if (!selectedStudentId) return;
+    update(ref(db, `participants/${selectedStudentId}/scores/pron`), {
+      rankName,
+      coupons,
+    });
 
-    if (stationRole === 'pron' && selectedStudentId) {
-      update(ref(db, `participants/${selectedStudentId}/scores/pron`), {
-        rankName,
-        coupons,
-      });
-      alert('발음 테스트 결과가 서버에 저장되었습니다!');
-    }
+    setSelectedStudentId('');
+    setPronCoupons(null);
+    setPronRankName('');
   };
 
-  // 사자성어 결과 서버 저장 및 간식 수령대(1~4번) 랜덤 배정
-  const handleSaveRelayScore = (isSuccess) => {
-    setRelayRoundEvaluated(true);
-    setRelayIsCorrect(isSuccess);
-    const newScore = isSuccess ? relayScore + 1 : relayScore;
-    if (isSuccess) setRelayScore(newScore);
+  // 사자성어 결과 저장 및 간식 수령대 배정 후 목록 복귀
+  const handleCompleteRelay = (isSuccess) => {
+    if (!selectedStudentId) return;
+    const newScore = isSuccess ? 1 : 0;
 
-    if (stationRole === 'relay' && selectedStudentId) {
-      const now = Date.now();
-      const activeSettlementRoles = Object.values(connectedStations)
-        .filter((s) => s.role && s.role.startsWith('settlement_') && (now - s.lastActive < 5000))
-        .map((s) => s.role);
+    const now = Date.now();
+    const activeSettlementRoles = Object.values(connectedStations)
+      .filter((s) => s.role && s.role.startsWith('settlement_') && (now - s.lastActive < 5000))
+      .map((s) => s.role);
 
-      let assignedRole = null;
-      let alertMsg = '';
+    let assignedRole = null;
+    let alertMsg = '';
 
-      if (activeSettlementRoles.length > 0) {
-        const randomIdx = Math.floor(Math.random() * activeSettlementRoles.length);
-        assignedRole = activeSettlementRoles[randomIdx];
-        const num = assignedRole.replace('settlement_', '');
-        alertMsg = `사자성어 완료! 🎉 간식 수령대 [${num}번] 부스로 이동하세요!`;
-      } else {
-        alertMsg = `사자성어 완료! 현재 접속된 간식 수령대가 없어 데이터가 보관됩니다.`;
-      }
-
-      update(ref(db, `participants/${selectedStudentId}/scores/relay`), {
-        score: newScore,
-        coupons: newScore,
-      });
-
-      update(ref(db, `participants/${selectedStudentId}`), {
-        assignedSettlement: assignedRole,
-      });
-
-      alert(alertMsg);
+    if (activeSettlementRoles.length > 0) {
+      const randomIdx = Math.floor(Math.random() * activeSettlementRoles.length);
+      assignedRole = activeSettlementRoles[randomIdx];
+      const num = assignedRole.replace('settlement_', '');
+      alertMsg = `사자성어 평가 완료! 🎉 간식 수령대 [${num}번 창구]로 이동하세요.`;
+    } else {
+      alertMsg = `사자성어 평가 완료! 수령대 기기가 등록되면 간식을 받을 수 있습니다.`;
     }
+
+    update(ref(db, `participants/${selectedStudentId}/scores/relay`), {
+      score: newScore,
+      coupons: newScore,
+    });
+
+    update(ref(db, `participants/${selectedStudentId}`), {
+      assignedSettlement: assignedRole,
+    });
+
+    alert(alertMsg);
+    setSelectedStudentId('');
+    setRelayScore(0);
   };
 
   // 간식 수령 완료
@@ -401,15 +416,7 @@ export default function App() {
       settled: true,
       settledAt: Date.now(),
     });
-    alert('간식 지급 처리가 완료되었습니다!');
-  };
-
-  // 올인원 모드 제기차기 결과 계산
-  const getJegiResult = () => {
-    const target = participantGender === '남자' ? 5 : 3;
-    const isPassed = jegiCount >= target;
-    const coupons = isPassed ? 3 : 0;
-    return { target, isPassed, coupons };
+    alert('간식 지급 처리가 완료되었습니다.');
   };
 
   if (!isAuthenticated) {
@@ -421,7 +428,7 @@ export default function App() {
               <Radio size={28} />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">YBS Helper</h1>
-            <p className="text-sm text-slate-500 mt-1">방송부 부원 신원 확인 후 서비스에 접근할 수 있습니다.</p>
+            <p className="text-sm text-slate-500 mt-1">방송부 부원 신원 확인 후 접근 가능합니다.</p>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-4">
@@ -496,9 +503,7 @@ export default function App() {
     );
   }
 
-  const jegiRes = getJegiResult();
-
-  // 파이어베이스에 활성화된 기기 목록 카운트 계산
+  // 부스 활성화 현황 집계
   const nowTime = Date.now();
   const activeStations = Object.values(connectedStations).filter((s) => nowTime - s.lastActive < 5000);
   const activeRolesCount = {
@@ -519,32 +524,65 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8fafd] text-slate-800 font-sans">
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-4 sm:px-6 py-3 sm:py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5 sm:gap-3 cursor-pointer shrink-0" onClick={() => setActiveView('main')}>
-            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-50 text-[#1a73e8] rounded-xl flex items-center justify-center shrink-0">
-              <Radio size={20} />
+      {/* 일반 관리 모드일 때만 헤더 HUD 표시 (부스 진행 중일 때는 완전히 은폐) */}
+      {activeView !== 'station_app' && (
+        <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-4 sm:px-6 py-3 sm:py-4">
+          <div className="max-w-5xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2.5 sm:gap-3 cursor-pointer shrink-0" onClick={() => setActiveView('main')}>
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-50 text-[#1a73e8] rounded-xl flex items-center justify-center shrink-0">
+                <Radio size={20} />
+              </div>
+              <div>
+                <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-none">YBS Helper</h1>
+                <span className="text-[10px] sm:text-xs text-slate-400 font-medium">ybs.ygmhelper.xyz</span>
+              </div>
             </div>
-            <div>
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-none">YBS Helper</h1>
-              <span className="text-[10px] sm:text-xs text-slate-400 font-medium">ybs.ygmhelper.xyz</span>
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+              <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-medium text-slate-600">
+                <span>{userSession?.grade}학년 {userSession?.name}</span>
+                {userSession?.isAdmin && (
+                  <span className="flex items-center gap-0.5 bg-indigo-100 text-indigo-700 font-semibold px-1.5 py-0.5 rounded text-[10px]">
+                    <ShieldCheck size={11} /> 관리자
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-medium text-slate-600">
-              <span>{userSession?.grade}학년 {userSession?.name}</span>
-              {userSession?.isAdmin && (
-                <span className="flex items-center gap-0.5 bg-indigo-100 text-indigo-700 font-semibold px-1.5 py-0.5 rounded text-[10px]">
-                  <ShieldCheck size={11} /> 관리자
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+        </header>
+      )}
 
+      {/* 부스 운영 전용 탑 헤더 (학생들에게 개인정보 노출 방지 & 보안 잠금) */}
+      {activeView === 'station_app' && (
+        <header className="bg-slate-900 text-white px-4 sm:px-6 py-3 border-b border-slate-800">
+          <div className="max-w-5xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span className="text-xs sm:text-sm font-bold tracking-wide">
+                부스 운영 중 : {
+                  stationRole === 'register' ? '1. 학생 정보입력대' :
+                  stationRole === 'timer' ? '2. 10초 타이머' :
+                  stationRole === 'jegi' ? '3. 제기차기' :
+                  stationRole === 'pron' ? '4. 발음 테스트' :
+                  stationRole === 'relay' ? '5. 사자성어' :
+                  `6. 간식 수령대 [${stationRole.replace('settlement_', '')}번 창구]`
+                }
+              </span>
+            </div>
+
+            <button
+              onClick={() => setIsExitModalOpen(true)}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 text-slate-300 hover:text-white cursor-pointer"
+            >
+              <Lock size={13} />
+              <span>역할 변경 (인증)</span>
+            </button>
+          </div>
+        </header>
+      )}
+
+      {/* 메인 루프 관제 및 컨텐츠 */}
       <main className="max-w-5xl mx-auto p-4 sm:p-6 md:p-8">
-        {/* 메인 서비스 목록 */}
+        {/* 메인 서비스 메뉴 */}
         {activeView === 'main' && (
           <div>
             <div className="mb-6 sm:mb-8">
@@ -609,14 +647,14 @@ export default function App() {
                       <Server size={24} />
                     </div>
                     <span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-xs font-semibold rounded-full">
-                      테스트 가능
+                      연동 가능
                     </span>
                   </div>
                   <h3 className="text-base font-bold text-slate-900 group-hover:text-[#1a73e8]">
                     서비스 연동 테스트 (다중 기기)
                   </h3>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    부스별 태블릿/스마트폰을 파이어베이스로 연결하여 실시간 데이터를 공유합니다.
+                    부스별 태블릿/스마트폰을 실시간으로 연결하여 데이터를 공유합니다.
                   </p>
                 </div>
                 <div className="mt-6">
@@ -626,37 +664,11 @@ export default function App() {
                   </button>
                 </div>
               </div>
-
-              <div
-                onClick={() => setActiveView('aio_register')}
-                className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between group"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="w-12 h-12 bg-blue-50 text-[#1a73e8] rounded-2xl flex items-center justify-center">
-                      <Timer size={24} />
-                    </div>
-                    <span className="px-2.5 py-1 bg-blue-50 text-[#1a73e8] text-xs font-semibold rounded-full">
-                      단일 기기 풀코스
-                    </span>
-                  </div>
-                  <h3 className="text-base font-bold text-slate-900 group-hover:text-[#1a73e8]">올인원 체험 모드</h3>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    하나의 기기에서 학생 등록 ➔ 4종 게임 진행 ➔ 간식 정산까지 한 번에 진행합니다.
-                  </p>
-                </div>
-                <div className="mt-6">
-                  <button className="w-full py-3 bg-[#1a73e8] text-white text-xs font-medium rounded-xl flex items-center justify-center gap-2 cursor-pointer">
-                    <span>올인원 시작하기</span>
-                    <ArrowRight size={14} />
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
         )}
 
-        {/* 기기 역할 설정 & 복원된 현황판 (관제 모니터링 카드) */}
+        {/* 기기 역할 설정 & 실시간 부스 현황판 */}
         {activeView === 'network_menu' && (
           <div>
             <button
@@ -679,17 +691,17 @@ export default function App() {
                   className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw size={14} />
-                  <span>서버 & 기기 전체 초기화 (관리자)</span>
+                  <span>데이터 전체 초기화 (관리자)</span>
                 </button>
               )}
             </div>
 
-            {/* 복원된 파이어베이스 실시간 부스 연결 현황판 */}
+            {/* 실시간 부스 현황판 */}
             <div className="p-6 bg-white rounded-3xl border border-slate-200/80 shadow-sm mb-8">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Wifi size={18} className="text-emerald-500" />
-                  <span className="text-sm font-bold text-slate-800">파이어베이스 실시간 연결 부스 현황판</span>
+                  <Wifi size={18} className="text-emerald-500 animate-pulse" />
+                  <span className="text-sm font-bold text-slate-800">실시간 연결 부스 현황판</span>
                 </div>
                 <span className="text-xs text-slate-400 font-medium">실시간 동기화 중</span>
               </div>
@@ -735,7 +747,6 @@ export default function App() {
 
             <h3 className="text-sm font-bold text-slate-700 mb-4 ml-1">이 기기의 부스 역할을 선택하세요:</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {/* 1. 정보입력대 */}
               <button
                 onClick={() => { setStationRole('register'); setSelectedStudentId(''); setActiveView('station_app'); }}
                 className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-blue-400 text-left transition-all cursor-pointer group"
@@ -747,7 +758,6 @@ export default function App() {
                 <p className="text-xs text-slate-400 mt-1">도전 학생의 학번, 이름, 성별을 등록합니다.</p>
               </button>
 
-              {/* 2. 10초 타이머 */}
               <button
                 onClick={() => { setStationRole('timer'); setSelectedStudentId(''); setActiveView('station_app'); }}
                 className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-indigo-400 text-left transition-all cursor-pointer group"
@@ -759,7 +769,6 @@ export default function App() {
                 <p className="text-xs text-slate-400 mt-1">10초 타이머를 측정하고 점수를 기록합니다.</p>
               </button>
 
-              {/* 3. 제기차기 */}
               <button
                 onClick={() => { setStationRole('jegi'); setSelectedStudentId(''); setActiveView('station_app'); }}
                 className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-amber-400 text-left transition-all cursor-pointer group"
@@ -771,7 +780,6 @@ export default function App() {
                 <p className="text-xs text-slate-400 mt-1">제기차기 성공 개수를 측정하고 채점합니다.</p>
               </button>
 
-              {/* 4. 발음 테스트 (보라색 아이콘 & 정사각형 디자인 고정) */}
               <button
                 onClick={() => { setStationRole('pron'); setSelectedStudentId(''); setActiveView('station_app'); }}
                 className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-purple-400 text-left transition-all cursor-pointer group"
@@ -780,10 +788,9 @@ export default function App() {
                   <MessageSquare size={20} />
                 </div>
                 <h4 className="text-base font-bold text-slate-900 group-hover:text-purple-600">4. 발음 테스트 부스</h4>
-                <p className="text-xs text-slate-400 mt-1">제시어 읽기 정확도를 수동 채점합니다.</p>
+                <p className="text-xs text-slate-400 mt-1">제시어 읽기 정확도를 채점합니다.</p>
               </button>
 
-              {/* 5. 사자성어 (청록색 아이콘 & 정사각형 디자인 고정) */}
               <button
                 onClick={() => { setStationRole('relay'); setSelectedStudentId(''); setActiveView('station_app'); }}
                 className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-teal-400 text-left transition-all cursor-pointer group"
@@ -795,7 +802,6 @@ export default function App() {
                 <p className="text-xs text-slate-400 mt-1">이어말하기 성공/실패를 판정합니다.</p>
               </button>
 
-              {/* 6. 간식 수령대 1~4번 */}
               {[1, 2, 3, 4].map((num) => (
                 <button
                   key={`settlement_${num}`}
@@ -806,41 +812,16 @@ export default function App() {
                     <Gift size={20} />
                   </div>
                   <h4 className="text-base font-bold text-slate-900 group-hover:text-emerald-600">6. 간식 수령대 [{num}번]</h4>
-                  <p className="text-xs text-slate-400 mt-1">{num}번 창구로 배정된 학생의 간식을 정산합니다.</p>
+                  <p className="text-xs text-slate-400 mt-1">{num}번 창구 배정 학생의 간식을 정산합니다.</p>
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* 부스별 전용 앱 화면 */}
+        {/* 부스 전용 애플리케이션 실행 화면 */}
         {activeView === 'station_app' && (
           <div>
-            <div className="flex items-center justify-between mb-6">
-              <button
-                onClick={() => {
-                  setStationRole('');
-                  setActiveView('network_menu');
-                }}
-                className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
-              >
-                <ChevronLeft size={16} />
-                <span>역할 선택으로 돌아가기</span>
-              </button>
-
-              <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700">
-                <Server size={14} />
-                <span>현재 기기 역할: {
-                  stationRole === 'register' ? '1. 정보입력대' :
-                  stationRole === 'timer' ? '2. 10초 타이머' :
-                  stationRole === 'jegi' ? '3. 제기차기' :
-                  stationRole === 'pron' ? '4. 발음테스트' :
-                  stationRole === 'relay' ? '5. 사자성어' :
-                  `6. 간식수령대 [${stationRole.replace('settlement_', '')}번]`
-                }</span>
-              </div>
-            </div>
-
             {/* 1번 정보 입력대 */}
             {stationRole === 'register' && (
               <div className="max-w-md mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
@@ -848,11 +829,11 @@ export default function App() {
                   <div className="w-12 h-12 bg-blue-50 text-[#1a73e8] rounded-2xl flex items-center justify-center mx-auto mb-3">
                     <User size={24} />
                   </div>
-                  <h2 className="text-xl font-bold text-slate-900">현장 학생 등록</h2>
-                  <p className="text-xs text-slate-500 mt-1">등록된 학생은 모든 부스 기기에 즉시 동기화됩니다.</p>
+                  <h2 className="text-xl font-bold text-slate-900">도전 학생 정보 등록</h2>
+                  <p className="text-xs text-slate-500 mt-1">등록된 정보는 모든 부스 기기에 동기화됩니다.</p>
                 </div>
 
-                <form onSubmit={handleRegisterToFirebase} className="space-y-4">
+                <form onSubmit={handleRegisterStudent} className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">학번</label>
                     <input
@@ -910,63 +891,68 @@ export default function App() {
                     type="submit"
                     className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-bold rounded-2xl text-sm mt-2 cursor-pointer flex items-center justify-center gap-2"
                   >
-                    <span>중앙 서버에 학생 등록하기</span>
+                    <span>등록하기</span>
                     <Plus size={16} />
                   </button>
                 </form>
               </div>
             )}
 
-            {/* 2~5번 부스용 펼쳐진 학생 선택 카드 목록 */}
-            {stationRole !== 'register' && !stationRole.startsWith('settlement') && (
-              <div className="max-w-2xl mx-auto mb-6 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm">
-                <div className="flex items-center justify-between mb-3 ml-1">
-                  <span className="text-xs font-bold text-slate-700">
-                    📋 도전 학생 선택 (이전 단계를 완료한 학생만 선택 가능)
+            {/* 2~5번 미니게임 부스: 학생 목록 선택 화면 (선택 전) */}
+            {stationRole !== 'register' && !stationRole.startsWith('settlement') && selectedStudentId === '' && (
+              <div className="max-w-2xl mx-auto bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">도전할 학생을 선택하세요</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">이전 단계를 완료한 학생만 도전이 가능합니다.</p>
+                  </div>
+                  <span className="text-xs bg-slate-100 px-3 py-1 rounded-full font-bold text-slate-600">
+                    등록인원 {Object.keys(globalParticipants).length}명
                   </span>
-                  <span className="text-[10px] text-slate-400">총 {Object.keys(globalParticipants).length}명</span>
                 </div>
 
                 {Object.keys(globalParticipants).length === 0 ? (
-                  <p className="text-center text-xs text-slate-400 py-6">1번 정보입력대에서 등록된 학생이 없습니다.</p>
+                  <div className="text-center py-12">
+                    <User size={36} className="text-slate-300 mx-auto mb-2" />
+                    <p className="text-xs text-slate-400">1번 정보입력대에서 등록된 학생이 아직 없습니다.</p>
+                  </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto p-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[480px] overflow-y-auto p-1">
                     {Object.values(globalParticipants).map((st) => {
                       const isCompleted = !!st.scores?.[stationRole];
                       const isEligible = canPlayStation(st, stationRole);
-                      const isSelected = selectedStudentId === st.id;
 
                       return (
                         <div
                           key={st.id}
                           onClick={() => {
                             if (!isEligible && !isCompleted) {
-                              alert('이전 미니게임을 완료해야 이 부스에 도전할 수 있습니다!');
+                              alert('이전 미니게임을 먼저 완수해야 해당 부스에 도전할 수 있습니다!');
                               return;
                             }
                             setSelectedStudentId(st.id);
                           }}
-                          className={`p-4 rounded-2xl border text-left cursor-pointer transition-all ${
-                            isSelected
-                              ? 'border-[#1a73e8] bg-blue-50/80 ring-2 ring-blue-500/20'
-                              : isCompleted
-                              ? 'border-emerald-200 bg-emerald-50/40'
+                          className={`p-4 rounded-2xl border text-left transition-all ${
+                            isCompleted
+                              ? 'border-emerald-200 bg-emerald-50/40 opacity-75'
                               : isEligible
-                              ? 'border-slate-200 bg-white hover:border-blue-300'
-                              : 'border-slate-100 bg-slate-100/60 opacity-50 cursor-not-allowed'
+                              ? 'border-slate-200 bg-white hover:border-blue-400 hover:shadow-sm cursor-pointer'
+                              : 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
                           }`}
                         >
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between mb-1">
                             <span className="font-bold text-slate-900 text-sm">[{st.id}] {st.name}</span>
                             <span className="text-xs font-semibold text-slate-500">{st.gender}</span>
                           </div>
                           <div className="mt-2 flex items-center justify-between text-xs">
                             {isCompleted ? (
                               <span className="text-emerald-600 font-bold flex items-center gap-1">
-                                <CheckCircle2 size={13} /> 도전 완료
+                                <CheckCircle2 size={13} /> 도전 완료됨
                               </span>
                             ) : isEligible ? (
-                              <span className="text-[#1a73e8] font-bold">🎯 도전 가능 (클릭)</span>
+                              <span className="text-[#1a73e8] font-bold flex items-center gap-1">
+                                🎯 도전 시작하기 <ArrowRight size={12} />
+                              </span>
                             ) : (
                               <span className="text-slate-400 font-medium">🔒 이전 게임 미완료</span>
                             )}
@@ -979,13 +965,22 @@ export default function App() {
               </div>
             )}
 
-            {/* 2번 타이머 부스 */}
-            {stationRole === 'timer' && selectedStudentId && (
+            {/* 2번 10초 타이머 전용 게임 창 (학생 선택 후 개인 화면) */}
+            {stationRole === 'timer' && selectedStudentId !== '' && (
               <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-                <h3 className="text-lg font-bold text-slate-900 mb-2">10초 타이머 부스</h3>
-                <p className="text-xs text-slate-500 mb-6">
-                  선택 학생: <b>{globalParticipants[selectedStudentId]?.name}</b> ({selectedStudentId})
-                </p>
+                <button
+                  onClick={() => setSelectedStudentId('')}
+                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 mb-4 cursor-pointer"
+                >
+                  <ChevronLeft size={14} /> 학생 목록으로 돌아가기
+                </button>
+
+                <div className="p-3 bg-blue-50 rounded-2xl mb-6">
+                  <span className="text-xs font-semibold text-[#1a73e8] block">도전 학생</span>
+                  <span className="text-lg font-black text-slate-900">
+                    [{selectedStudentId}] {globalParticipants[selectedStudentId]?.name} 학생
+                  </span>
+                </div>
 
                 <div className="h-32 flex items-center justify-center my-4 bg-slate-50 rounded-3xl border border-slate-100">
                   <div className="text-6xl font-black text-slate-900 font-mono">
@@ -994,30 +989,51 @@ export default function App() {
                 </div>
 
                 {isRunning ? (
-                  <button onClick={stopGame} className="w-full py-5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl text-lg cursor-pointer">
+                  <button onClick={stopGame} className="w-full py-5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl text-lg cursor-pointer shadow-sm">
                     정지 (STOP)
                   </button>
                 ) : (
-                  <button onClick={startGame} className="w-full py-5 bg-[#1a73e8] hover:bg-blue-700 text-white font-bold rounded-2xl text-lg cursor-pointer">
+                  <button onClick={startGame} className="w-full py-5 bg-[#1a73e8] hover:bg-blue-700 text-white font-bold rounded-2xl text-lg cursor-pointer shadow-sm">
                     시작 (START)
                   </button>
                 )}
 
                 {gameResult && (
-                  <div className="mt-6 p-4 bg-emerald-50 text-emerald-800 rounded-2xl text-xs font-bold">
-                    서버 저장 기록: {gameResult.stoppedTime}초 ({gameResult.rank} - 간식권 +{gameResult.coupons}개)
+                  <div className="mt-6 space-y-3">
+                    <div className="p-4 bg-emerald-50 text-emerald-800 rounded-2xl text-sm font-bold">
+                      측정 결과: {gameResult.stoppedTime}초 ({gameResult.rank} / 간식 +{gameResult.coupons}개)
+                    </div>
+                    <button
+                      onClick={handleCompleteTimer}
+                      className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-sm cursor-pointer shadow-sm flex items-center justify-center gap-2"
+                    >
+                      <Check size={16} />
+                      <span>완료하고 다음 학생 선택하기</span>
+                    </button>
                   </div>
                 )}
               </div>
             )}
 
-            {/* 3번 제기차기 부스 */}
-            {stationRole === 'jegi' && selectedStudentId && (
+            {/* 3번 제기차기 전용 게임 창 (학생 선택 후 개인 화면) */}
+            {stationRole === 'jegi' && selectedStudentId !== '' && (
               <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-                <h3 className="text-lg font-bold text-slate-900 mb-2">제기차기 부스</h3>
-                <p className="text-xs text-slate-500 mb-6">
-                  선택 학생: <b>{globalParticipants[selectedStudentId]?.name}</b> ({globalParticipants[selectedStudentId]?.gender})
-                </p>
+                <button
+                  onClick={() => setSelectedStudentId('')}
+                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 mb-4 cursor-pointer"
+                >
+                  <ChevronLeft size={14} /> 학생 목록으로 돌아가기
+                </button>
+
+                <div className="p-3 bg-amber-50 rounded-2xl mb-6">
+                  <span className="text-xs font-semibold text-amber-700 block">도전 학생</span>
+                  <span className="text-lg font-black text-slate-900">
+                    [{selectedStudentId}] {globalParticipants[selectedStudentId]?.name} ({globalParticipants[selectedStudentId]?.gender})
+                  </span>
+                  <span className="text-[11px] text-amber-600 block mt-0.5">
+                    통과 목표: {globalParticipants[selectedStudentId]?.gender === '남자' ? '5개 이상' : '3개 이상'}
+                  </span>
+                </div>
 
                 <div className="text-6xl font-black text-slate-900 font-mono my-6">
                   {jegiCount}<span className="text-xl font-normal text-slate-400">개</span>
@@ -1025,43 +1041,75 @@ export default function App() {
 
                 <div className="flex justify-center gap-3 mb-6">
                   <button onClick={() => setJegiCount((p) => Math.max(0, p - 1))} className="w-14 h-14 bg-slate-100 rounded-2xl font-bold text-xl cursor-pointer">-</button>
-                  <button onClick={() => setJegiCount((p) => p + 1)} className="w-20 h-14 bg-[#1a73e8] text-white rounded-2xl font-bold text-xl cursor-pointer">+</button>
+                  <button onClick={() => setJegiCount((p) => p + 1)} className="w-20 h-14 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-bold text-xl cursor-pointer">+</button>
                 </div>
 
-                <button onClick={handleSaveJegiScore} className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-sm cursor-pointer">
-                  제기차기 결과 서버 저장
+                <button
+                  onClick={handleCompleteJegi}
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-sm cursor-pointer shadow-sm flex items-center justify-center gap-2"
+                >
+                  <Check size={16} />
+                  <span>기록 완료하기</span>
                 </button>
               </div>
             )}
 
-            {/* 4번 발음 테스트 부스 */}
-            {stationRole === 'pron' && selectedStudentId && (
+            {/* 4번 발음 테스트 전용 게임 창 (학생 선택 후 개인 화면) */}
+            {stationRole === 'pron' && selectedStudentId !== '' && (
               <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-                <h3 className="text-lg font-bold text-slate-900 mb-2">발음 테스트 부스</h3>
-                <p className="text-xs text-slate-500 mb-4">
-                  선택 학생: <b>{globalParticipants[selectedStudentId]?.name}</b>
-                </p>
+                <button
+                  onClick={() => setSelectedStudentId('')}
+                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 mb-4 cursor-pointer"
+                >
+                  <ChevronLeft size={14} /> 학생 목록으로 돌아가기
+                </button>
 
-                <div className="p-4 bg-slate-50 rounded-2xl border text-left text-sm font-bold mb-6">
+                <div className="p-3 bg-purple-50 rounded-2xl mb-4">
+                  <span className="text-xs font-semibold text-purple-700 block">도전 학생</span>
+                  <span className="text-lg font-black text-slate-900">
+                    [{selectedStudentId}] {globalParticipants[selectedStudentId]?.name} 학생
+                  </span>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-2xl border text-left text-sm font-bold my-4 leading-relaxed text-slate-800">
                   "{PRON_SENTENCES[0]}"
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 mb-6">
-                  <button onClick={() => handleSavePronScore(3, '완벽 (100%)')} className="p-3 bg-amber-50 text-amber-900 rounded-2xl text-xs font-bold border border-amber-200 cursor-pointer">완벽 (+3개)</button>
-                  <button onClick={() => handleSavePronScore(2, '우수 (95% 이상)')} className="p-3 bg-emerald-50 text-emerald-900 rounded-2xl text-xs font-bold border border-emerald-200 cursor-pointer">우수 (+2개)</button>
-                  <button onClick={() => handleSavePronScore(1, '통과 (90% 이상)')} className="p-3 bg-blue-50 text-blue-900 rounded-2xl text-xs font-bold border border-blue-200 cursor-pointer">통과 (+1개)</button>
-                  <button onClick={() => handleSavePronScore(0, '실패 (90% 미만)')} className="p-3 bg-red-50 text-red-900 rounded-2xl text-xs font-bold border border-red-200 cursor-pointer">실패 (+0개)</button>
+                <p className="text-xs text-slate-500 mb-4">발음 정확도를 판단하여 해당 등급을 선택하세요:</p>
+
+                <div className="grid grid-cols-2 gap-2.5 mb-6">
+                  <button onClick={() => handleCompletePron(3, '완벽')} className="p-3.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-2xl text-xs font-bold border border-amber-200 cursor-pointer">
+                    완벽 (+3개)
+                  </button>
+                  <button onClick={() => handleCompletePron(2, '우수')} className="p-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 rounded-2xl text-xs font-bold border border-emerald-200 cursor-pointer">
+                    우수 (+2개)
+                  </button>
+                  <button onClick={() => handleCompletePron(1, '통과')} className="p-3.5 bg-blue-50 hover:bg-blue-100 text-blue-900 rounded-2xl text-xs font-bold border border-blue-200 cursor-pointer">
+                    통과 (+1개)
+                  </button>
+                  <button onClick={() => handleCompletePron(0, '실패')} className="p-3.5 bg-red-50 hover:bg-red-100 text-red-900 rounded-2xl text-xs font-bold border border-red-200 cursor-pointer">
+                    실패 (+0개)
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* 5번 사자성어 부스 */}
-            {stationRole === 'relay' && selectedStudentId && (
+            {/* 5번 사자성어 전용 게임 창 (학생 선택 후 개인 화면) */}
+            {stationRole === 'relay' && selectedStudentId !== '' && (
               <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-                <h3 className="text-lg font-bold text-slate-900 mb-2">사자성어 부스</h3>
-                <p className="text-xs text-slate-500 mb-4">
-                  선택 학생: <b>{globalParticipants[selectedStudentId]?.name}</b>
-                </p>
+                <button
+                  onClick={() => setSelectedStudentId('')}
+                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 mb-4 cursor-pointer"
+                >
+                  <ChevronLeft size={14} /> 학생 목록으로 돌아가기
+                </button>
+
+                <div className="p-3 bg-teal-50 rounded-2xl mb-4">
+                  <span className="text-xs font-semibold text-teal-700 block">도전 학생</span>
+                  <span className="text-lg font-black text-slate-900">
+                    [{selectedStudentId}] {globalParticipants[selectedStudentId]?.name} 학생
+                  </span>
+                </div>
 
                 <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 my-4 space-y-3">
                   <div className="text-4xl font-extrabold text-blue-600">제시어: 사자</div>
@@ -1069,40 +1117,41 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 my-6">
-                  <button onClick={() => handleSaveRelayScore(true)} className="py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl cursor-pointer">성공 (+1개)</button>
-                  <button onClick={() => handleSaveRelayScore(false)} className="py-4 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-2xl cursor-pointer">실패 (+0개)</button>
+                  <button onClick={() => handleCompleteRelay(true)} className="py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl cursor-pointer text-sm shadow-sm">
+                    성공 (+1개)
+                  </button>
+                  <button onClick={() => handleCompleteRelay(false)} className="py-4 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-2xl cursor-pointer text-sm shadow-sm">
+                    실패 (+0개)
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* 6번 간식 수령대 (1~4번 부스 분리 & 자동 이관 시스템) */}
+            {/* 6번 간식 수령대 (학생 맞춤형 성적표 인터페이스) */}
             {stationRole.startsWith('settlement') && (
-              <div className="max-w-xl mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
+              <div className="max-w-2xl mx-auto bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200/80">
                 <div className="text-center mb-6">
                   <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
                     <Gift size={24} />
                   </div>
                   <h2 className="text-xl font-bold text-slate-900">
-                    간식 수령대 [{stationRole.replace('settlement_', '')}번 창구]
+                    간식 정산 수령대 [{stationRole.replace('settlement_', '')}번 창구]
                   </h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    이 창구로 배정되었거나, 배정받은 창구가 이탈하여 자동 이관된 학생 리스트입니다.
+                    학생의 종목별 결과를 확인하고 간식을 수령 처리합니다.
                   </p>
                 </div>
 
                 <div className="space-y-4">
                   {Object.values(globalParticipants).length === 0 ? (
-                    <p className="text-center text-xs text-slate-400 py-8">등록된 학생이 없습니다.</p>
+                    <p className="text-center text-xs text-slate-400 py-10">등록된 학생이 없습니다.</p>
                   ) : (
                     Object.values(globalParticipants)
                       .filter((st) => {
                         if (!canPlayStation(st, stationRole)) return false;
-
                         const isOriginalAssignedAlive = activeSettlementRoles.includes(st.assignedSettlement);
-
                         if (st.assignedSettlement === stationRole) return true;
                         if (!isOriginalAssignedAlive && activeSettlementRoles[0] === stationRole) return true;
-
                         return false;
                       })
                       .map((st) => {
@@ -1111,42 +1160,61 @@ export default function App() {
                         const pronC = st.scores?.pron?.coupons || 0;
                         const relayC = st.scores?.relay?.coupons || 0;
                         const totalC = timerC + jegiC + pronC + relayC;
-                        const isReassigned = st.assignedSettlement !== stationRole;
 
                         return (
-                          <div key={st.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-bold text-slate-900">[{st.id}] {st.name}</span>
-                                <span className="text-xs text-slate-400">({st.gender})</span>
-                                {st.settled ? (
-                                  <span className="px-2 py-0.5 bg-gray-200 text-gray-700 font-bold rounded text-[10px]">수령완료</span>
-                                ) : isReassigned ? (
-                                  <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 font-bold rounded text-[10px]">자동 이관됨</span>
-                                ) : (
-                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 font-bold rounded text-[10px]">정상 배정</span>
-                                )}
+                          <div key={st.id} className="p-5 bg-slate-50 rounded-3xl border border-slate-200/80 space-y-4">
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-200/60">
+                              <div>
+                                <span className="text-base font-extrabold text-slate-900">[{st.id}] {st.name}</span>
+                                <span className="text-xs text-slate-400 ml-2">({st.gender})</span>
                               </div>
-                              <div className="text-xs text-slate-500 mt-2 space-x-2">
-                                <span>타이머: <b>+{timerC}</b></span>
-                                <span>제기: <b>+{jegiC}</b></span>
-                                <span>발음: <b>+{pronC}</b></span>
-                                <span>사자성어: <b>+{relayC}</b></span>
+                              {st.settled ? (
+                                <span className="px-3 py-1 bg-gray-200 text-gray-700 font-bold rounded-full text-xs">
+                                  수령 완료됨
+                                </span>
+                              ) : (
+                                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 font-bold rounded-full text-xs">
+                                  수령 대기 중
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 미니게임 4종 성적 집계표 */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                              <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                                <span className="text-slate-400 font-medium block text-[10px]">⏱️ 10초 타이머</span>
+                                <span className="font-bold text-slate-800 mt-1 block">+{timerC}개</span>
+                              </div>
+                              <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                                <span className="text-slate-400 font-medium block text-[10px]">🦵 제기차기</span>
+                                <span className="font-bold text-slate-800 mt-1 block">+{jegiC}개</span>
+                              </div>
+                              <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                                <span className="text-slate-400 font-medium block text-[10px]">🗣️ 발음 테스트</span>
+                                <span className="font-bold text-slate-800 mt-1 block">+{pronC}개</span>
+                              </div>
+                              <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                                <span className="text-slate-400 font-medium block text-[10px]">📖 사자성어</span>
+                                <span className="font-bold text-slate-800 mt-1 block">+{relayC}개</span>
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-3 shrink-0">
-                              <span className="text-base font-black text-amber-600">마이쮸 {totalC}개</span>
+                            <div className="flex items-center justify-between pt-2">
+                              <div>
+                                <span className="text-xs text-slate-500 font-medium">최종 간식 수령액:</span>
+                                <span className="text-lg font-black text-amber-600 ml-1.5">마이쮸 {totalC}개</span>
+                              </div>
+
                               <button
                                 disabled={st.settled}
                                 onClick={() => handleSettleSnack(st.id)}
-                                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                                className={`px-5 py-3 rounded-2xl text-xs font-bold transition-all shadow-sm ${
                                   st.settled
                                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                                     : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
                                 }`}
                               >
-                                {st.settled ? '지급 완료됨' : '간식 지급하기'}
+                                {st.settled ? '수령 완료' : '간식 수령 확인'}
                               </button>
                             </div>
                           </div>
@@ -1158,134 +1226,58 @@ export default function App() {
             )}
           </div>
         )}
+      </main>
 
-        {/* 올인원 체험 풀코스 */}
-        {activeView === 'aio_register' && (
-          <div className="max-w-md mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-            <button onClick={() => setActiveView('treasure_menu')} className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-6 cursor-pointer">
-              <ChevronLeft size={16} /> <span>모드 선택으로 돌아가기</span>
-            </button>
-            <div className="mb-6 text-center">
-              <div className="w-12 h-12 bg-blue-50 text-[#1a73e8] rounded-2xl flex items-center justify-center mx-auto mb-3">
-                <User size={24} />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900">올인원 참가 학생 등록</h2>
+      {/* 역할 변경 이탈 보안 모달 (비밀번호 검증) */}
+      {isExitModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-slate-100">
+            <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Lock size={24} />
             </div>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              if (!participantId.trim() || !participantName.trim()) return;
-              setJegiCount(0);
-              setPronCoupons(null);
-              setActiveView('aio_timer_guide');
-            }} className="space-y-4">
+            <h3 className="text-lg font-bold text-slate-900 text-center">부스 역할 변경 인증</h3>
+            <p className="text-xs text-slate-500 text-center mt-1 mb-6">
+              부스를 이탈하거나 역할을 변경하려면 인증 코드를 입력하세요.
+            </p>
+
+            <form onSubmit={handleConfirmExitRole} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">학번</label>
-                <input type="text" value={participantId} onChange={(e) => setParticipantId(e.target.value)} placeholder="예: 10101" className="w-full px-4 py-3.5 bg-slate-50 border rounded-2xl text-sm" />
+                <input
+                  type="password"
+                  value={exitCodeInput}
+                  onChange={(e) => setExitCodeInput(e.target.value)}
+                  placeholder="인증 코드 입력"
+                  className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-center font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/20 focus:border-[#1a73e8]"
+                  autoFocus
+                />
+                {exitError && (
+                  <p className="text-xs text-red-500 text-center mt-2 font-medium">{exitError}</p>
+                )}
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">이름</label>
-                <input type="text" value={participantName} onChange={(e) => setParticipantName(e.target.value)} placeholder="학생 이름" className="w-full px-4 py-3.5 bg-slate-50 border rounded-2xl text-sm" />
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExitModalOpen(false);
+                    setExitCodeInput('');
+                    setExitError('');
+                  }}
+                  className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs cursor-pointer transition-colors"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="py-3 bg-[#1a73e8] hover:bg-blue-700 text-white font-bold rounded-2xl text-xs cursor-pointer transition-colors"
+                >
+                  인증 및 이탈
+                </button>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">성별</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button type="button" onClick={() => setParticipantGender('남자')} className={`py-3.5 rounded-2xl text-sm font-semibold border ${participantGender === '남자' ? 'bg-blue-50 border-[#1a73e8] text-[#1a73e8]' : 'bg-slate-50'}`}>남자</button>
-                  <button type="button" onClick={() => setParticipantGender('여자')} className={`py-3.5 rounded-2xl text-sm font-semibold border ${participantGender === '여자' ? 'bg-rose-50 border-rose-500 text-rose-600' : 'bg-slate-50'}`}>여자</button>
-                </div>
-              </div>
-              <button type="submit" className="w-full py-3.5 bg-[#1a73e8] text-white font-medium rounded-2xl text-sm mt-2 cursor-pointer">올인원 테스트 시작</button>
             </form>
           </div>
-        )}
-
-        {activeView === 'aio_timer_guide' && (
-          <div className="max-w-lg mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 text-center">
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">1단계: 10초 타이머 맞추기</h2>
-            <p className="text-xs text-slate-500 mb-8">마음속으로 초를 세어 10초에 가장 가까울 때 정지 버튼을 누르세요.</p>
-            <button onClick={() => setActiveView('aio_timer_play')} className="w-full py-4 bg-[#1a73e8] text-white font-medium rounded-2xl text-sm cursor-pointer">타이머 도전</button>
-          </div>
-        )}
-
-        {activeView === 'aio_timer_play' && (
-          <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-            <h3 className="text-lg font-bold text-slate-900 mb-6">10.00초에 맞춰 정지하세요!</h3>
-            <div className="h-36 flex items-center justify-center my-4 bg-slate-50 rounded-3xl border">
-              <div style={{ opacity: isRunning && time >= 1 ? 0 : 1 }} className="text-7xl font-black font-mono">{time.toFixed(2)}</div>
-            </div>
-            {isRunning ? (
-              <button onClick={() => { stopGame(); setActiveView('aio_timer_result'); }} className="w-full py-5 bg-red-500 text-white font-bold rounded-2xl text-lg cursor-pointer">정지 (STOP)</button>
-            ) : (
-              <button onClick={startGame} className="w-full py-5 bg-[#1a73e8] text-white font-bold rounded-2xl text-lg cursor-pointer">시작 (START)</button>
-            )}
-          </div>
-        )}
-
-        {activeView === 'aio_timer_result' && gameResult && (
-          <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">타이머 결과: {gameResult.stoppedTime}초</h2>
-            <p className="text-xs text-slate-500 mb-6">{gameResult.rank} 판정 (간식권 +{gameResult.coupons}개)</p>
-            <button onClick={() => setActiveView('aio_jegi_play')} className="w-full py-4 bg-[#1a73e8] text-white font-medium rounded-2xl text-sm cursor-pointer">다음 (제기차기)</button>
-          </div>
-        )}
-
-        {activeView === 'aio_jegi_play' && (
-          <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-            <h2 className="text-xl font-bold text-slate-900 mb-2">2단계: 제기차기 개수 측정</h2>
-            <div className="text-7xl font-black font-mono my-6">{jegiCount}개</div>
-            <div className="flex justify-center gap-3 mb-6">
-              <button onClick={() => setJegiCount((p) => Math.max(0, p - 1))} className="w-16 h-16 bg-slate-100 rounded-2xl font-bold text-2xl cursor-pointer">-</button>
-              <button onClick={() => setJegiCount((p) => p + 1)} className="w-20 h-20 bg-[#1a73e8] text-white rounded-3xl font-bold text-3xl cursor-pointer">+</button>
-            </div>
-            <button onClick={() => { setTargetSentence(PRON_SENTENCES[0]); setActiveView('aio_pron_play'); }} className="w-full py-4 bg-[#1a73e8] text-white font-medium rounded-2xl text-sm cursor-pointer">다음 (발음 테스트)</button>
-          </div>
-        )}
-
-        {activeView === 'aio_pron_play' && (
-          <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-            <h2 className="text-xl font-bold text-slate-900 mb-2">3단계: 발음 정확도 채점</h2>
-            <div className="p-4 bg-slate-50 rounded-2xl border text-left text-sm font-bold my-4">"{targetSentence}"</div>
-            <div className="grid grid-cols-2 gap-2 mb-6">
-              <button onClick={() => setPronCoupons(3)} className={`p-3 rounded-2xl text-xs font-bold border ${pronCoupons === 3 ? 'bg-amber-100 border-amber-400' : 'bg-slate-50'}`}>완벽 (+3개)</button>
-              <button onClick={() => setPronCoupons(2)} className={`p-3 rounded-2xl text-xs font-bold border ${pronCoupons === 2 ? 'bg-emerald-100 border-emerald-400' : 'bg-slate-50'}`}>우수 (+2개)</button>
-              <button onClick={() => setPronCoupons(1)} className={`p-3 rounded-2xl text-xs font-bold border ${pronCoupons === 1 ? 'bg-blue-100 border-blue-400' : 'bg-slate-50'}`}>통과 (+1개)</button>
-              <button onClick={() => setPronCoupons(0)} className={`p-3 rounded-2xl text-xs font-bold border ${pronCoupons === 0 ? 'bg-red-100 border-red-400' : 'bg-slate-50'}`}>실패 (+0개)</button>
-            </div>
-            <button disabled={pronCoupons === null} onClick={() => { setRelayScore(0); setActiveView('aio_relay_play'); }} className="w-full py-4 bg-[#1a73e8] text-white font-medium rounded-2xl text-sm cursor-pointer">다음 (사자성어)</button>
-          </div>
-        )}
-
-        {activeView === 'aio_relay_play' && (
-          <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-            <h2 className="text-xl font-bold text-slate-900 mb-2">4단계: 사자성어 이어말하기</h2>
-            <div className="p-6 bg-slate-50 rounded-3xl border my-4 space-y-3">
-              <div className="text-4xl font-extrabold text-blue-600">제시어: 사자</div>
-              <div className="text-4xl font-extrabold text-emerald-600">정답어: 성어</div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 my-6">
-              <button onClick={() => { setRelayScore(1); setActiveView('aio_settlement'); }} className="py-4 bg-emerald-600 text-white font-bold rounded-2xl cursor-pointer">성공 (+1개)</button>
-              <button onClick={() => { setRelayScore(0); setActiveView('aio_settlement'); }} className="py-4 bg-rose-500 text-white font-bold rounded-2xl cursor-pointer">실패 (+0개)</button>
-            </div>
-          </div>
-        )}
-
-        {activeView === 'aio_settlement' && gameResult && (
-          <div className="max-w-md mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 text-center">
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">올인원 최종 정산</h2>
-            <p className="text-xs text-slate-500 mb-6">{participantId} {participantName} ({participantGender})</p>
-            <div className="bg-slate-50 p-5 rounded-2xl text-sm space-y-2 mb-6">
-              <div className="flex justify-between"><span>10초 타이머</span><b>+{gameResult.coupons}개</b></div>
-              <div className="flex justify-between"><span>제기차기</span><b>+{jegiRes.coupons}개</b></div>
-              <div className="flex justify-between"><span>발음 테스트</span><b>+{pronCoupons || 0}개</b></div>
-              <div className="flex justify-between"><span>사자성어</span><b>+{relayScore}개</b></div>
-              <div className="pt-2 border-t flex justify-between font-extrabold text-amber-600 text-base">
-                <span>총 마이쮸 수령액</span>
-                <span>{gameResult.coupons + jegiRes.coupons + (pronCoupons || 0) + relayScore}개</span>
-              </div>
-            </div>
-            <button onClick={() => setActiveView('treasure_menu')} className="w-full py-4 bg-[#1a73e8] text-white font-medium rounded-2xl text-sm cursor-pointer">메인 메뉴로 돌아가기</button>
-          </div>
-        )}
-      </main>
+        </div>
+      )}
     </div>
   );
 }
