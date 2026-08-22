@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light !important;
+}
+
+body {
+  margin: 0;
+  background-color: #f8fafd;
+  color: #1e293b;
+}
