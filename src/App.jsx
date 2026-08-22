@@ -24,7 +24,12 @@ import {
   Plus,
   Minus,
   Activity,
-  Target
+  Target,
+  Mic,
+  MicOff,
+  CheckCircle2,
+  XCircle,
+  MessageSquare
 } from 'lucide-react';
 
 // 방송부 부원 명단 데이터 (검증용)
@@ -40,6 +45,47 @@ const ADMIN_DATA = [
   { grade: '2', name: '이상혁' },
 ];
 
+// 발음 정확도 테스트 문구 목록
+const PRON_SENTENCES = [
+  '한국관광공사 곽진광 관광과장',
+  '내가 그린 기린 그림은 긴 기린 그림이고 네가 그린 기린 그림은 안 긴 기린 그림이다',
+  '저 뜀틀이 내가 뛸 뜀틀인가 내가 안 뛸 뜀틀인가',
+  '올망졸망똘망똘망 올망졸망똘망똘망',
+  '간장공장 공장장은 강 공장장이고 된장공장 공장장은 장 공장장이다',
+  '고려고 교복은 고급 교복이고 고려고 교복은 고급 원단을 사용했다',
+  '서울특별시 특허허가과 허가과장 허 과장',
+];
+
+// 문자열 유사도(정확도 %) 계산 함수 (Levenshtein Distance)
+const calculateSimilarity = (str1, str2) => {
+  const s1 = str1.replace(/\s+/g, '');
+  const s2 = str2.replace(/\s+/g, '');
+  if (!s1 || !s2) return 0;
+  if (s1 === s2) return 100;
+
+  const track = Array(s2.length + 1)
+    .fill(null)
+    .map(() => Array(s1.length + 1).fill(null));
+
+  for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
+  for (let j = 0; j <= s2.length; j += 1) track[j][0] = j;
+
+  for (let j = 1; j <= s2.length; j += 1) {
+    for (let i = 1; i <= s1.length; i += 1) {
+      const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      track[j][i] = Math.min(
+        track[j][i - 1] + 1,
+        track[j - 1][i] + 1,
+        track[j - 1][i - 1] + indicator
+      );
+    }
+  }
+
+  const distance = track[s2.length][s1.length];
+  const maxLen = Math.max(s1.length, s2.length);
+  return Math.max(0, Math.round(((maxLen - distance) / maxLen) * 100));
+};
+
 export default function App() {
   // 인증 관련 상태
   const [grade, setGrade] = useState('');
@@ -50,7 +96,7 @@ export default function App() {
   const [userSession, setUserSession] = useState(null);
   const [error, setError] = useState('');
 
-  // 화면 이동 상태 ('main' | 'treasure_menu' | 'game_register' | 'game_guide' | 'game_play' | 'game_result' | 'jegi_guide' | 'jegi_play' | 'settlement')
+  // 화면 이동 상태 ('main' | 'treasure_menu' | 'game_register' | 'game_guide' | 'game_play' | 'game_result' | 'jegi_guide' | 'jegi_play' | 'pron_guide' | 'pron_play' | 'settlement')
   const [activeView, setActiveView] = useState('main');
 
   // 미니게임 참가 학생 정보
@@ -68,12 +114,20 @@ export default function App() {
   // 제기차기 게임 관련 상태
   const [jegiCount, setJegiCount] = useState(0);
 
+  // 발음 테스트 게임 관련 상태
+  const [targetSentence, setTargetSentence] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [spokenText, setSpokenText] = useState('');
+  const [pronAccuracy, setPronAccuracy] = useState(null);
+  const [pronError, setPronError] = useState('');
+
   // 결과 화면 마커 애니메이션 위치 상태 (%)
   const [animatedPos, setAnimatedPos] = useState(0);
 
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const audioRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   // 컴포넌트 마운트 시 오디오 사전 로딩 설정
   useEffect(() => {
@@ -129,14 +183,13 @@ export default function App() {
     );
   };
 
-  // 인증 제출 처리 (보안 강화를 위해 에러 세부 원인 숨김)
+  // 인증 제출 처리
   const handleAuth = (e) => {
     e.preventDefault();
 
     const trimmedName = name.trim();
     const validNames = STUDENT_DATA[grade] || [];
 
-    // 어떤 항목이라도 올바르지 않으면 동일한 보안 에러 메시지 출력
     if (
       !grade ||
       !trimmedName ||
@@ -166,6 +219,8 @@ export default function App() {
     }
     setParticipantError('');
     setJegiCount(0);
+    setSpokenText('');
+    setPronAccuracy(null);
     setActiveView('game_guide');
   };
 
@@ -249,15 +304,60 @@ export default function App() {
     setActiveView('game_result');
   };
 
-  // 타이머 정리
-  useEffect(() => {
-    return () => {
-      clearInterval(timerRef.current);
-      if (audioRef.current) {
-        audioRef.current.pause();
+  // 발음 테스트 문장 랜덤 뽑기
+  const setupRandomPronSentence = () => {
+    const randomIndex = Math.floor(Math.random() * PRON_SENTENCES.length);
+    setTargetSentence(PRON_SENTENCES[randomIndex]);
+    setSpokenText('');
+    setPronAccuracy(null);
+    setPronError('');
+  };
+
+  // 음성 인식 시작 (Web Speech API)
+  const startSpeechRecognition = () => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setPronError('현재 브라우저가 음성 인식을 지원하지 않습니다. Chrome/Edge를 사용해 주세요.');
+      return;
+    }
+
+    setPronError('');
+    setIsListening(true);
+    setSpokenText('');
+    setPronAccuracy(null);
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ko-KR';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setSpokenText(transcript);
+      const acc = calculateSimilarity(targetSentence, transcript);
+      setPronAccuracy(acc);
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event) => {
+      console.error('음성 인식 오류:', event.error);
+      setIsListening(false);
+      if (event.error === 'not-allowed') {
+        setPronError('마이크 접근 권한이 거부되었습니다. 브라우저 마이크 허용을 확인해주세요.');
+      } else {
+        setPronError('음성 인식 중 오류가 발생했습니다. 다시 시도해 주세요.');
       }
     };
-  }, []);
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
 
   // 타이머 투명도 계산
   const getTimerOpacity = () => {
@@ -277,6 +377,13 @@ export default function App() {
     const isPassed = jegiCount >= target;
     const coupons = isPassed ? 3 : 0;
     return { target, isPassed, coupons };
+  };
+
+  // 발음 테스트 통과 여부 및 간식권 계산 (75% 이상 성공 시 간식권 3개)
+  const getPronResult = () => {
+    const isPassed = pronAccuracy !== null && pronAccuracy >= 75;
+    const coupons = isPassed ? 3 : 0;
+    return { isPassed, coupons };
   };
 
   // 부원 인증 화면
@@ -371,6 +478,7 @@ export default function App() {
   }
 
   const jegiRes = getJegiResult();
+  const pronRes = getPronResult();
 
   return (
     <div className="min-h-screen bg-[#f8fafd] text-slate-800">
@@ -503,7 +611,7 @@ export default function App() {
                     올인원 테스트
                   </h3>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    10초 맞추기 + 제기차기 미니게임 체험 및 간식 보상 정산 테스트를 진행합니다.
+                    타이머 + 제기차기 + 발음 테스트 3종 미니게임 체험 및 통합 정산을 진행합니다.
                   </p>
                 </div>
                 <div className="mt-6">
@@ -940,6 +1048,175 @@ export default function App() {
               </div>
 
               <button
+                onClick={() => {
+                  setupRandomPronSentence();
+                  setActiveView('pron_guide');
+                }}
+                className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>다음 단계 (발음 테스트 안내)</span>
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 9. NEW: 발음 정확도 테스트 시작 전 안내 화면 */}
+        {activeView === 'pron_guide' && (
+          <div className="max-w-lg mx-auto">
+            <button
+              onClick={() => setActiveView('jegi_play')}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 mb-6 transition-colors cursor-pointer"
+            >
+              <ChevronLeft size={16} />
+              <span>제기차기로 돌아가기</span>
+            </button>
+
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
+              <div className="text-center mb-6">
+                <span className="px-3 py-1 bg-purple-50 text-purple-600 text-xs font-semibold rounded-full">
+                  3단계: 발음 정확도 테스트
+                </span>
+                <h2 className="text-2xl font-bold text-slate-900 mt-3">발음 정확하게 말하기 안내</h2>
+              </div>
+
+              <div className="space-y-4 mb-8">
+                <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+                    <MessageSquare size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">1. 문구 확인 후 말하기</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      화면에 제시되는 난이도 높은 문구를 똑똑히 읽어 음성 인식 마이크에 대고 말하세요.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+                    <Mic size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">2. 자동 발음 정확도 분석</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      시스템이 음성을 분석하여 일치율(%)을 계산합니다.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-100 text-xs text-purple-900">
+                  <b>💡 성공 기준:</b> 발음 일치율 <b>75% 이상 달성 시 간식권 3개</b> 추가 지급!
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setActiveView('pron_play');
+                }}
+                className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>발음 테스트 시작</span>
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 10. NEW: 발음 정확도 측정 진행 화면 */}
+        {activeView === 'pron_play' && (
+          <div className="max-w-md mx-auto text-center">
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 bg-purple-50 text-purple-600">
+                <Mic size={28} />
+              </div>
+
+              <h2 className="text-xl font-bold text-slate-900">발음 정확하게 말하기</h2>
+              <p className="text-xs text-slate-500 mt-1 mb-6">
+                [말하기 버튼]을 누르고 아래 문장을 크게 읽으세요.
+              </p>
+
+              {/* 제시된 문장 카드 */}
+              <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 text-left mb-6 relative">
+                <span className="text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-md mb-2 inline-block">
+                  제시어
+                </span>
+                <p className="text-base font-bold text-slate-800 leading-relaxed break-keep">
+                  "{targetSentence}"
+                </p>
+              </div>
+
+              {/* 녹음 제어 버튼 */}
+              <div className="mb-6">
+                {isListening ? (
+                  <div className="py-5 bg-purple-50 border border-purple-200 rounded-2xl flex flex-col items-center justify-center gap-2 animate-pulse">
+                    <Mic size={32} className="text-purple-600" />
+                    <span className="text-xs font-bold text-purple-700">듣고 있습니다... 말씀해 주세요!</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={startSpeechRecognition}
+                    className="w-full py-4 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold rounded-2xl transition-colors shadow-md text-base flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Mic size={20} />
+                    <span>{spokenText ? '다시 말하기' : '음성 인식 시작 (말하기)'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* 에러 메시지 */}
+              {pronError && (
+                <div className="flex items-center gap-1.5 text-xs text-red-500 mb-4 justify-center">
+                  <ShieldAlert size={14} />
+                  <span>{pronError}</span>
+                </div>
+              )}
+
+              {/* 인식된 문장 및 정확도 결과 표시 */}
+              {spokenText && (
+                <div className="space-y-3 p-5 bg-slate-50 rounded-2xl border border-slate-100 text-left mb-6">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block mb-1">인식된 음성</span>
+                    <p className="text-sm font-semibold text-slate-800 bg-white p-3 rounded-xl border border-slate-200">
+                      {spokenText}
+                    </p>
+                  </div>
+
+                  {pronAccuracy !== null && (
+                    <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-600">발음 정확도</span>
+                      <span className={`text-2xl font-black font-mono ${
+                        pronAccuracy >= 75 ? 'text-emerald-600' : 'text-red-500'
+                      }`}>
+                        {pronAccuracy}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 달성 상태 표시 */}
+              {pronAccuracy !== null && (
+                <div className={`p-4 rounded-2xl text-xs font-bold mb-6 border flex items-center justify-center gap-2 ${
+                  pronRes.isPassed
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-red-50 text-red-600 border-red-200'
+                }`}>
+                  {pronRes.isPassed ? (
+                    <>
+                      <CheckCircle2 size={16} />
+                      <span>발음 테스트 성공! (간식권 +3개)</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle size={16} />
+                      <span>75% 미달성 (간식권 미획득)</span>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <button
                 onClick={() => setActiveView('settlement')}
                 className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors shadow-sm text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
@@ -950,7 +1227,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 9. 통합 최종 정산 화면 */}
+        {/* 11. 통합 최종 정산 화면 (타이머 + 제기차기 + 발음 합산) */}
         {activeView === 'settlement' && gameResult && (
           <div className="max-w-md mx-auto">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
@@ -982,15 +1259,21 @@ export default function App() {
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500 text-xs">발음 테스트</span>
+                  <span className="font-semibold text-slate-800">
+                    {pronAccuracy !== null ? `${pronAccuracy}%` : '미도전'} ({pronRes.isPassed ? '성공 +3개' : '실패 +0개'})
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
                   <span className="text-slate-500 text-xs">총 간식권</span>
                   <span className="font-bold text-[#1a73e8]">
-                    {gameResult.coupons + jegiRes.coupons}개
+                    {gameResult.coupons + jegiRes.coupons + pronRes.coupons}개
                   </span>
                 </div>
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-slate-700 font-bold text-xs">최종 수령 보상</span>
                   <span className="font-extrabold text-lg text-amber-600">
-                    마이쮸 {gameResult.coupons + jegiRes.coupons}개
+                    마이쮸 {gameResult.coupons + jegiRes.coupons + pronRes.coupons}개
                   </span>
                 </div>
               </div>
@@ -1003,6 +1286,8 @@ export default function App() {
                     setParticipantGender('남자');
                     setGameResult(null);
                     setJegiCount(0);
+                    setSpokenText('');
+                    setPronAccuracy(null);
                     setActiveView('game_register');
                   }}
                   className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-2xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
@@ -1018,6 +1303,8 @@ export default function App() {
                     setParticipantGender('남자');
                     setGameResult(null);
                     setJegiCount(0);
+                    setSpokenText('');
+                    setPronAccuracy(null);
                     setActiveView('main');
                   }}
                   className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
