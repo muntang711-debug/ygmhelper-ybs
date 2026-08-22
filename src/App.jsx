@@ -69,7 +69,7 @@ export default function App() {
     const audio = new Audio('/10sTimer.mp3');
     audio.preload = 'auto';
     audio.loop = true;
-    audio.load(); // 사전 로딩 트리거
+    audio.load();
     audioRef.current = audio;
 
     return () => {
@@ -79,7 +79,7 @@ export default function App() {
     };
   }, []);
 
-  // 안내 화면(game_guide) 및 게임 화면 진입 시 사전 로딩 보장
+  // 안내 화면 및 진입 시 사전 로딩 보장
   useEffect(() => {
     if ((activeView === 'game_guide' || activeView === 'game_register') && audioRef.current) {
       audioRef.current.load();
@@ -149,7 +149,7 @@ export default function App() {
     setActiveView('game_guide');
   };
 
-  // 타이머 시작 (0초 ~ 165초 사이 무작위 위치에서 확실히 재생)
+  // 타이머 시작 (0~165초 사이 무작위 위치에서 시작)
   const startGame = () => {
     setTime(0);
     setStoppedTime(null);
@@ -158,7 +158,6 @@ export default function App() {
     startTimeRef.current = Date.now();
 
     if (audioRef.current) {
-      // 0초부터 165초(2분 45초) 사이의 랜덤 시간 설정
       const randomStart = Math.random() * 165;
       
       try {
@@ -171,7 +170,6 @@ export default function App() {
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            // 재생 시작 후에도 재생 위치 재보정하여 0초 리셋 방지
             if (audioRef.current) {
               audioRef.current.currentTime = randomStart;
             }
@@ -241,11 +239,11 @@ export default function App() {
     };
   }, []);
 
-  // 타이머 투명도 계산 (0~3초 페이드아웃, 3초 이상 보이지 않음)
+  // 타이머 투명도 계산 (동일한 속도로 선형 투명해지며, 시작 후 정확히 1.0초에 completely fade out)
   const getTimerOpacity = () => {
     if (!isRunning) return 1;
-    if (time >= 3.0) return 0;
-    return Math.max(0, (3.0 - time) / 3.0);
+    if (time >= 1.0) return 0;
+    return Math.max(0, 1.0 - time);
   };
 
   // 00.00 포맷 변환
@@ -346,29 +344,29 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8fafd] text-slate-800">
-      {/* 헤더 */}
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-6 py-4">
+      {/* 헤더 (모바일 가로깨짐 방지 및 반응형 레이아웃 개선) */}
+      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-4 sm:px-6 py-3 sm:py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveView('main')}>
-            <div className="w-10 h-10 bg-blue-50 text-[#1a73e8] rounded-xl flex items-center justify-center">
-              <Radio size={22} />
+          <div className="flex items-center gap-2.5 sm:gap-3 cursor-pointer shrink-0" onClick={() => setActiveView('main')}>
+            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-50 text-[#1a73e8] rounded-xl flex items-center justify-center shrink-0">
+              <Radio size={20} className="sm:w-[22px] sm:h-[22px]" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900 leading-none">YBS Helper</h1>
-              <span className="text-xs text-slate-400 font-medium">ybs.ygmhelper.xyz</span>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-none">YBS Helper</h1>
+              <span className="text-[10px] sm:text-xs text-slate-400 font-medium">ybs.ygmhelper.xyz</span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full text-xs font-medium text-slate-600">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-medium text-slate-600 whitespace-nowrap">
               <span>{userSession?.grade}학년 {userSession?.name}</span>
               {userSession?.isAdmin && (
-                <span className="flex items-center gap-1 bg-indigo-100 text-indigo-700 font-semibold px-2 py-0.5 rounded-md text-[11px]">
-                  <ShieldCheck size={12} />
+                <span className="flex items-center gap-0.5 sm:gap-1 bg-indigo-100 text-indigo-700 font-semibold px-1.5 py-0.5 rounded-md text-[10px] sm:text-[11px] whitespace-nowrap">
+                  <ShieldCheck size={11} />
                   관리자
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-full text-xs font-medium text-[#1a73e8]">
+            <div className="hidden sm:flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-full text-xs font-medium text-[#1a73e8] whitespace-nowrap">
               <Sparkles size={14} className="text-amber-500" />
               <span>방송부 전용</span>
             </div>
@@ -377,11 +375,11 @@ export default function App() {
       </header>
 
       {/* 메인 컨텐츠 영역 */}
-      <main className="max-w-5xl mx-auto p-6 md:p-8">
+      <main className="max-w-5xl mx-auto p-4 sm:p-6 md:p-8">
         {/* 1. 서비스 메인 목록 */}
         {activeView === 'main' && (
           <div>
-            <div className="mb-8">
+            <div className="mb-6 sm:mb-8">
               <h2 className="text-xl font-bold text-slate-900">서비스 목록</h2>
               <p className="text-sm text-slate-500 mt-1">사용 가능한 방송부 지원 도구 모음입니다.</p>
             </div>
@@ -556,7 +554,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 4. 미니게임 진행 안내 화면 (오디오 사전 로딩 완료 단계) */}
+        {/* 4. 미니게임 진행 안내 화면 */}
         {activeView === 'game_guide' && (
           <div className="max-w-lg mx-auto">
             <button
@@ -599,7 +597,7 @@ export default function App() {
                 </div>
 
                 <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-100 text-xs text-amber-800">
-                  <b>💡 주의:</b> 타이머 숫자는 시작 후 천천히 페이드 아웃되며, <b>3초 이후에는 화면에서 완전히 사라집니다!</b> 정지 버튼을 누르면 시간이 다시 나타납니다.
+                  <b>💡 주의:</b> 타이머 숫자는 시작과 동시에 일정한 속도로 점차 투명해져 <b>1초 후에 완전히 사라집니다!</b> 정지 버튼을 누르면 시간이 다시 나타납니다.
                 </div>
               </div>
 
@@ -617,7 +615,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 5. 타이머 게임 진행 화면 */}
+        {/* 5. 타이머 게임 진행 화면 (1초 만에 일정한 속도로 완전히 사라지도록 설정) */}
         {activeView === 'game_play' && (
           <div className="max-w-md mx-auto text-center">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80 mb-6">
@@ -631,14 +629,14 @@ export default function App() {
               <div className="h-36 flex items-center justify-center my-4 bg-slate-50/70 rounded-3xl border border-slate-100">
                 <div
                   style={{ opacity: getTimerOpacity() }}
-                  className="text-7xl font-black tracking-tight text-slate-900 font-mono transition-opacity duration-200 select-none"
+                  className="text-7xl font-black tracking-tight text-slate-900 font-mono select-none"
                 >
                   {formatDisplayTime(time)}
                 </div>
               </div>
 
               <p className="text-xs text-slate-400 mb-8">
-                {isRunning ? (time < 3.0 ? '숫자가 사라지는 중...' : '감각으로 10초를 맞추세요!') : '시작 버튼을 누르세요'}
+                {isRunning ? (time < 1.0 ? '숫자가 사라지는 중...' : '감각으로 10초를 맞추세요!') : '시작 버튼을 누르세요'}
               </p>
 
               {isRunning ? (
