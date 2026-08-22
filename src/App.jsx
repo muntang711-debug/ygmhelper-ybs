@@ -79,13 +79,8 @@ export default function App() {
 
   // 메인 화면 및 뷰 제어 상태
   const [activeView, setActiveView] = useState('main'); 
-  // 'main' | 'treasure_menu' | 'network_menu' | 'station_app' 
-  // | 'aio_register' | 'aio_timer_guide' | 'aio_timer_play' | 'aio_timer_result'
-  // | 'aio_jegi_guide' | 'aio_jegi_play' | 'aio_pron_guide' | 'aio_pron_play'
-  // | 'aio_relay_guide' | 'aio_relay_play' | 'aio_settlement'
 
   // 서비스 연동 기기 역할 상태
-  // 'register' | 'timer' | 'jegi' | 'pron' | 'relay' | 'settlement_1' | 'settlement_2' | 'settlement_3' | 'settlement_4'
   const [stationRole, setStationRole] = useState('');
 
   // 파이어베이스 실시간 수신 상태
@@ -137,33 +132,31 @@ export default function App() {
     });
 
     const unsub2 = onValue(stationsRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      setConnectedStations(data);
-
-      // 데이터 초기화 시 기기 역할 자동 해제
-      if (stationRole && !data[deviceId]) {
-        setStationRole('');
-        setSelectedStudentId('');
-        setActiveView('network_menu');
-      }
+      setConnectedStations(snapshot.val() || {});
     });
 
     return () => {
       unsub1();
       unsub2();
     };
-  }, [deviceId, stationRole]);
+  }, []);
 
-  // 실시간 기기 핑(Heartbeat) 및 이탈(onDisconnect) 자동 제거
+  // 기기 핑 및 실시간 서버 등록 (즉시 등록 처리로 튕김 완벽 방지)
   useEffect(() => {
     if (!stationRole) return;
 
     const deviceRef = ref(db, `connectedStations/${deviceId}`);
 
-    // 접속 해제 시 자동으로 서버 데이터에서 제거
+    // 역할 선택 즉시 서버에 동기적 등록
+    set(deviceRef, {
+      role: stationRole,
+      lastActive: Date.now(),
+    });
+
+    // 접속 해제 시 서버에서 삭제
     onDisconnect(deviceRef).remove();
 
-    // 2초마다 실시간 핑 전송
+    // 2초마다 핑 갱신
     const interval = setInterval(() => {
       set(deviceRef, {
         role: stationRole,
@@ -245,13 +238,13 @@ export default function App() {
       alert('관리자만 초기화할 수 있습니다.');
       return;
     }
-    if (window.confirm('모든 참가자 데이터, 점수, 기기 역할까지 파이어베이스에서 완전히 초기화하시겠습니까?')) {
+    if (window.confirm('서버의 모든 학생 참가 기록, 점수, 기기 역할 접속까지 완전히 초기화하시겠습니까?')) {
       remove(ref(db, 'participants'));
       remove(ref(db, 'connectedStations'));
       setStationRole('');
       setSelectedStudentId('');
       setActiveView('network_menu');
-      alert('모든 데이터와 기기 설정이 초기화되었습니다.');
+      alert('파이어베이스 전체 데이터가 성공적으로 초기화되었습니다.');
     }
   };
 
@@ -372,7 +365,6 @@ export default function App() {
     if (isSuccess) setRelayScore(newScore);
 
     if (stationRole === 'relay' && selectedStudentId) {
-      // 현재 접속해 있는 간식 수령대 기기 목록 가져오기
       const now = Date.now();
       const activeSettlementRoles = Object.values(connectedStations)
         .filter((s) => s.role && s.role.startsWith('settlement_') && (now - s.lastActive < 5000))
@@ -382,13 +374,12 @@ export default function App() {
       let alertMsg = '';
 
       if (activeSettlementRoles.length > 0) {
-        // 접속된 수령대 중 랜덤 1개 선택
         const randomIdx = Math.floor(Math.random() * activeSettlementRoles.length);
         assignedRole = activeSettlementRoles[randomIdx];
         const num = assignedRole.replace('settlement_', '');
         alertMsg = `사자성어 완료! 🎉 간식 수령대 [${num}번] 부스로 이동하세요!`;
       } else {
-        alertMsg = `사자성어 완료! 현재 접속된 간식 수령대가 없어 데이터가 보관됩니다. 수령대가 연결되면 안내를 받으세요.`;
+        alertMsg = `사자성어 완료! 현재 접속된 간식 수령대가 없어 데이터가 보관됩니다.`;
       }
 
       update(ref(db, `participants/${selectedStudentId}/scores/relay`), {
@@ -507,10 +498,23 @@ export default function App() {
 
   const jegiRes = getJegiResult();
 
-  // 현재 접속된 간식수령대 기기 목록
+  // 파이어베이스에 활성화된 기기 목록 카운트 계산
   const nowTime = Date.now();
-  const activeSettlementRoles = Object.values(connectedStations)
-    .filter((s) => s.role && s.role.startsWith('settlement_') && (nowTime - s.lastActive < 5000))
+  const activeStations = Object.values(connectedStations).filter((s) => nowTime - s.lastActive < 5000);
+  const activeRolesCount = {
+    register: activeStations.filter((s) => s.role === 'register').length,
+    timer: activeStations.filter((s) => s.role === 'timer').length,
+    jegi: activeStations.filter((s) => s.role === 'jegi').length,
+    pron: activeStations.filter((s) => s.role === 'pron').length,
+    relay: activeStations.filter((s) => s.role === 'relay').length,
+    settlement_1: activeStations.filter((s) => s.role === 'settlement_1').length,
+    settlement_2: activeStations.filter((s) => s.role === 'settlement_2').length,
+    settlement_3: activeStations.filter((s) => s.role === 'settlement_3').length,
+    settlement_4: activeStations.filter((s) => s.role === 'settlement_4').length,
+  };
+
+  const activeSettlementRoles = activeStations
+    .filter((s) => s.role && s.role.startsWith('settlement_'))
     .map((s) => s.role);
 
   return (
@@ -652,7 +656,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 기기 역할 설정 카탈로그 */}
+        {/* 기기 역할 설정 & 복원된 현황판 (관제 모니터링 카드) */}
         {activeView === 'network_menu' && (
           <div>
             <button
@@ -680,6 +684,55 @@ export default function App() {
               )}
             </div>
 
+            {/* 복원된 파이어베이스 실시간 부스 연결 현황판 */}
+            <div className="p-6 bg-white rounded-3xl border border-slate-200/80 shadow-sm mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Wifi size={18} className="text-emerald-500" />
+                  <span className="text-sm font-bold text-slate-800">파이어베이스 실시간 연결 부스 현황판</span>
+                </div>
+                <span className="text-xs text-slate-400 font-medium">실시간 동기화 중</span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-center mb-4">
+                <div className={`p-3 rounded-2xl border ${activeRolesCount.register > 0 ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                  <span className="text-[10px] font-bold block">1. 정보입력대</span>
+                  <span className="text-base font-black">{activeRolesCount.register}대 접속</span>
+                </div>
+                <div className={`p-3 rounded-2xl border ${activeRolesCount.timer > 0 ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                  <span className="text-[10px] font-bold block">2. 10초 타이머</span>
+                  <span className="text-base font-black">{activeRolesCount.timer}대 접속</span>
+                </div>
+                <div className={`p-3 rounded-2xl border ${activeRolesCount.jegi > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                  <span className="text-[10px] font-bold block">3. 제기차기</span>
+                  <span className="text-base font-black">{activeRolesCount.jegi}대 접속</span>
+                </div>
+                <div className={`p-3 rounded-2xl border ${activeRolesCount.pron > 0 ? 'bg-purple-50 border-purple-200 text-purple-800' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                  <span className="text-[10px] font-bold block">4. 발음 테스트</span>
+                  <span className="text-base font-black">{activeRolesCount.pron}대 접속</span>
+                </div>
+                <div className={`p-3 rounded-2xl border ${activeRolesCount.relay > 0 ? 'bg-teal-50 border-teal-200 text-teal-800' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                  <span className="text-[10px] font-bold block">5. 사자성어</span>
+                  <span className="text-base font-black">{activeRolesCount.relay}대 접속</span>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100">
+                <span className="text-xs font-bold text-slate-600 mb-2 block">6. 간식 수령대 연결 상황 (1~4번)</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                  {[1, 2, 3, 4].map((num) => {
+                    const cnt = activeRolesCount[`settlement_${num}`];
+                    return (
+                      <div key={num} className={`p-2.5 rounded-xl border ${cnt > 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                        <span className="text-[10px] font-bold block">수령대 {num}번</span>
+                        <span className="text-xs font-extrabold">{cnt > 0 ? '🟢 접속됨' : '⚪ 미접속'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
             <h3 className="text-sm font-bold text-slate-700 mb-4 ml-1">이 기기의 부스 역할을 선택하세요:</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {/* 1. 정보입력대 */}
@@ -697,7 +750,7 @@ export default function App() {
               {/* 2. 10초 타이머 */}
               <button
                 onClick={() => { setStationRole('timer'); setSelectedStudentId(''); setActiveView('station_app'); }}
-                className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-blue-400 text-left transition-all cursor-pointer group"
+                className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-indigo-400 text-left transition-all cursor-pointer group"
               >
                 <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-3">
                   <Timer size={20} />
@@ -709,7 +762,7 @@ export default function App() {
               {/* 3. 제기차기 */}
               <button
                 onClick={() => { setStationRole('jegi'); setSelectedStudentId(''); setActiveView('station_app'); }}
-                className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-blue-400 text-left transition-all cursor-pointer group"
+                className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-amber-400 text-left transition-all cursor-pointer group"
               >
                 <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mb-3">
                   <Activity size={20} />
@@ -718,7 +771,7 @@ export default function App() {
                 <p className="text-xs text-slate-400 mt-1">제기차기 성공 개수를 측정하고 채점합니다.</p>
               </button>
 
-              {/* 4. 발음 테스트 (보라색 박스 디자인) */}
+              {/* 4. 발음 테스트 (보라색 아이콘 & 정사각형 디자인 고정) */}
               <button
                 onClick={() => { setStationRole('pron'); setSelectedStudentId(''); setActiveView('station_app'); }}
                 className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-purple-400 text-left transition-all cursor-pointer group"
@@ -730,7 +783,7 @@ export default function App() {
                 <p className="text-xs text-slate-400 mt-1">제시어 읽기 정확도를 수동 채점합니다.</p>
               </button>
 
-              {/* 5. 사자성어 (청록색 박스 디자인) */}
+              {/* 5. 사자성어 (청록색 아이콘 & 정사각형 디자인 고정) */}
               <button
                 onClick={() => { setStationRole('relay'); setSelectedStudentId(''); setActiveView('station_app'); }}
                 className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:border-teal-400 text-left transition-all cursor-pointer group"
@@ -1022,7 +1075,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 6번 간식 수령대 (1~4번 부스 분리 & 이관 로직 적용) */}
+            {/* 6번 간식 수령대 (1~4번 부스 분리 & 자동 이관 시스템) */}
             {stationRole.startsWith('settlement') && (
               <div className="max-w-xl mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
                 <div className="text-center mb-6">
@@ -1043,16 +1096,11 @@ export default function App() {
                   ) : (
                     Object.values(globalParticipants)
                       .filter((st) => {
-                        // 사자성어 게임을 마친 학생만 수령 대상
                         if (!canPlayStation(st, stationRole)) return false;
 
-                        // 원래 지정된 수령대 기기가 살아있는지 확인
                         const isOriginalAssignedAlive = activeSettlementRoles.includes(st.assignedSettlement);
 
-                        // 1. 이 창구에 정확히 배정된 학생
                         if (st.assignedSettlement === stationRole) return true;
-
-                        // 2. 다른 창구로 배정받았으나 해당 창구가 끊겨서 이관된 학생 (현재 부스가 활성화된 첫 수령대인 경우 흡수)
                         if (!isOriginalAssignedAlive && activeSettlementRoles[0] === stationRole) return true;
 
                         return false;
