@@ -189,7 +189,7 @@ export default function App() {
     };
   }, [stationRole, deviceId]);
 
-  // 오디오 사전 로딩
+  // 오디오 사전 로딩 (앱 초기 마운트 시 + 타이머 부스 진입 시 즉시 준비)
   useEffect(() => {
     const audio = new Audio('/10sTimer.mp3');
     audio.preload = 'auto';
@@ -202,6 +202,13 @@ export default function App() {
       }
     };
   }, []);
+
+  // 타이머 부스 진입 혹은 도전 학생 선택 시 음원 가용 상태 사전 확보
+  useEffect(() => {
+    if ((stationRole === 'timer' || activeView.includes('timer')) && audioRef.current) {
+      audioRef.current.load();
+    }
+  }, [stationRole, activeView, selectedStudentId]);
 
   // 인디케이터 애니메이션 처리
   useEffect(() => {
@@ -303,11 +310,22 @@ export default function App() {
     }
   };
 
-  // 1. 정보입력대: 학번 + 이름 + 성별 3가지 모두 동일할 때만 중복 처리
+  // 타이머 대기 중인 인원 수 계산 (타이머를 완료하지 않은 학생 수)
+  const timerWaitingStudents = Object.values(globalParticipants).filter((st) => !st.scores?.timer);
+  const timerWaitingCount = timerWaitingStudents.length;
+
+  // 1. 정보입력대: 타이머 부스 대기 인원 2명 제한 및 학번+이름+성별 정밀 중복 검증
   const handleRegisterStudent = (e) => {
     e.preventDefault();
     const cleanId = participantId.trim();
     const cleanName = participantName.trim();
+
+    // 타이머 부스 대기 인원이 2명 이상이면 등록 불가
+    if (timerWaitingCount >= 2) {
+      showToast('타이머 부스 대기 인원이 2명입니다. 대기 학생이 타이머를 마친 후 등록하세요.', 'error');
+      setParticipantError('타이머 부스 대기 인원 초과 (최대 2명). 타이머 완수 후 등록 가능합니다.');
+      return;
+    }
 
     if (!cleanId) {
       setParticipantError('학번을 입력해 주세요. (예: 10101)');
@@ -343,7 +361,7 @@ export default function App() {
     showToast(`[${cleanName}] 학생이 등록되었습니다.`, 'success');
   };
 
-  // 타이머 게임 시작
+  // 타이머 게임 시작 (사전 버퍼링된 오디오 지연 없이 즉시 재생)
   const startGame = () => {
     setTime(0);
     setGameResult(null);
@@ -431,7 +449,7 @@ export default function App() {
     setPronCoupons(null);
   };
 
-  // 사자성어 완료 후 1초 뒤 '전면 독자 화면(booth_assigned_view)'으로 이동
+  // 사자성어 완료 즉시 (0초 대기) 전면 수령대 배정 화면으로 이동
   const handleCompleteRelay = (isSuccess) => {
     if (!selectedStudentId) return;
     const newScore = isSuccess ? 1 : 0;
@@ -466,11 +484,9 @@ export default function App() {
     setSelectedStudentId('');
     setRelayScore(0);
 
-    // 1초 뒤 전면 화면으로 전환
-    setTimeout(() => {
-      setAssignedBoothInfo({ number: boothNum, studentName, studentId });
-      setActiveView('booth_assigned_view');
-    }, 1000);
+    // 1초 지연 없이 즉시 전면 수령대 안내 화면으로 전환
+    setAssignedBoothInfo({ number: boothNum, studentName, studentId });
+    setActiveView('booth_assigned_view');
   };
 
   // 간식 수령 최종 완료 처리 (처리 후 화면에서 즉시 제거)
@@ -597,7 +613,7 @@ export default function App() {
     .filter((s) => s.role && s.role.startsWith('settlement_'))
     .map((s) => s.role);
 
-  // 타이머 페이드 아웃 투명도 계산 (0초~1초 사이에 1 -> 0으로 감쇄)
+  // 타이머 페이드 아웃 투명도 계산
   const timerOpacity = isRunning ? Math.max(0, 1 - time) : 1;
 
   return (
@@ -948,7 +964,7 @@ export default function App() {
         {/* 부스 전용 애플리케이션 실행 화면 */}
         {activeView === 'station_app' && (
           <div>
-            {/* 1번 정보 입력대 */}
+            {/* 1번 정보 입력대 (타이머 대기 인원 2명 제한 제어 적용) */}
             {stationRole === 'register' && (
               <div className="max-w-md mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
                 <div className="text-center mb-6">
@@ -957,6 +973,18 @@ export default function App() {
                   </div>
                   <h2 className="text-xl font-bold text-slate-900">도전 학생 정보 등록</h2>
                   <p className="text-xs text-slate-500 mt-1">등록된 정보는 모든 부스 기기에 동기화됩니다.</p>
+
+                  {/* 타이머 부스 대기 현황 인디케이터 바 */}
+                  <div className={`mt-4 p-3 rounded-2xl border text-xs font-bold flex items-center justify-between ${
+                    timerWaitingCount >= 2 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700'
+                  }`}>
+                    <span className="flex items-center gap-1">
+                      <Timer size={14} /> 타이머 부스 대기 현황
+                    </span>
+                    <span className="text-sm font-black">
+                      {timerWaitingCount} / 2명 {timerWaitingCount >= 2 ? '(대기 정원 초과)' : '(등록 가능)'}
+                    </span>
+                  </div>
                 </div>
 
                 <form onSubmit={handleRegisterStudent} className="space-y-4">
@@ -968,6 +996,7 @@ export default function App() {
                       onChange={(e) => setParticipantId(e.target.value)}
                       placeholder="예: 10101"
                       className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm"
+                      disabled={timerWaitingCount >= 2}
                     />
                   </div>
 
@@ -979,6 +1008,7 @@ export default function App() {
                       onChange={(e) => setParticipantName(e.target.value)}
                       placeholder="학생 이름 입력"
                       className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm"
+                      disabled={timerWaitingCount >= 2}
                     />
                   </div>
 
@@ -987,6 +1017,7 @@ export default function App() {
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         type="button"
+                        disabled={timerWaitingCount >= 2}
                         onClick={() => setParticipantGender('남자')}
                         className={`py-3.5 rounded-2xl text-sm font-semibold border ${
                           participantGender === '남자' ? 'bg-blue-50 border-[#1a73e8] text-[#1a73e8]' : 'bg-slate-50 border-slate-200 text-slate-600'
@@ -996,6 +1027,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
+                        disabled={timerWaitingCount >= 2}
                         onClick={() => setParticipantGender('여자')}
                         className={`py-3.5 rounded-2xl text-sm font-semibold border ${
                           participantGender === '여자' ? 'bg-rose-50 border-rose-500 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'
@@ -1015,16 +1047,21 @@ export default function App() {
 
                   <button
                     type="submit"
-                    className="w-full py-4 bg-[#1a73e8] hover:bg-blue-700 text-white font-bold rounded-2xl text-sm mt-2 cursor-pointer flex items-center justify-center gap-2"
+                    disabled={timerWaitingCount >= 2}
+                    className={`w-full py-4 text-white font-bold rounded-2xl text-sm mt-2 flex items-center justify-center gap-2 ${
+                      timerWaitingCount >= 2
+                        ? 'bg-slate-300 cursor-not-allowed'
+                        : 'bg-[#1a73e8] hover:bg-blue-700 cursor-pointer'
+                    }`}
                   >
-                    <span>등록하기</span>
+                    <span>{timerWaitingCount >= 2 ? '타이머 인원 완수 대기 중...' : '등록하기'}</span>
                     <Plus size={16} />
                   </button>
                 </form>
               </div>
             )}
 
-            {/* 2~5번 미니게임 부스: 도전 가능한 학생 목록 (이미 완수한 학생은 자동 숨김) */}
+            {/* 2~5번 미니게임 부스: 도전 가능한 학생 목록 */}
             {stationRole !== 'register' && !stationRole.startsWith('settlement') && selectedStudentId === '' && (
               <div className="max-w-2xl mx-auto bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
@@ -1065,7 +1102,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 2번 10초 타이머 전용 게임 창 (좌우 0.00s~12.00s 및 10.00s 83.33% 정밀 고정) */}
+            {/* 2번 10초 타이머 전용 게임 창 */}
             {stationRole === 'timer' && selectedStudentId !== '' && (
               <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
                 <button
@@ -1107,7 +1144,6 @@ export default function App() {
                       측정 결과: {gameResult.stoppedTime}초 ({gameResult.rank} / 간식 +{gameResult.coupons}개)
                     </div>
 
-                    {/* 타임라인 인디케이터 바 (10.00s 좌표 83.33% 완벽 교정) */}
                     <div className="bg-slate-50 p-5 rounded-3xl border border-slate-200">
                       <div className="relative h-6 text-[11px] font-bold text-slate-400 mb-2">
                         <span className="absolute left-0 top-0">0.00s</span>
@@ -1318,7 +1354,7 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  /* 2단계: 팝업 모달이 아닌, 독자적인 전면 정산 내역 화면 */
+                  /* 2단계: 전면 상세 정산 내역 화면 */
                   <div className="max-w-xl mx-auto bg-white rounded-3xl p-6 sm:p-10 shadow-sm border border-slate-200/80">
                     <button
                       onClick={() => setSelectedSettlementStudent(null)}
@@ -1391,7 +1427,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 사자성어 완료 후 1초 뒤 이동하는 '전면 독자 화면 (booth_assigned_view)' */}
+        {/* 사자성어 완료 즉시 이동하는 '전면 독자 화면 (booth_assigned_view)' */}
         {activeView === 'booth_assigned_view' && (
           <div className="max-w-xl mx-auto text-center bg-white rounded-3xl p-8 sm:p-12 shadow-sm border border-slate-200/80 my-4">
             <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
@@ -1580,7 +1616,7 @@ export default function App() {
         )}
       </main>
 
-      {/* 역할 변경 이탈 보안 모달 (부스 관리자 이탈용 고유 인증창) */}
+      {/* 역할 변경 이탈 보안 모달 */}
       {isExitModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-slate-100">
