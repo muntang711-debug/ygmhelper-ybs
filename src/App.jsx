@@ -77,9 +77,6 @@ export default function App() {
 
   // 메인 화면 및 뷰 제어 상태
   const [activeView, setActiveView] = useState('main'); 
-  // 'main' | 'treasure_menu' | 'network_menu' | 'station_app' 
-  // | 'aio_register' | 'aio_timer_guide' | 'aio_timer_play' | 'aio_timer_result'
-  // | 'aio_jegi_play' | 'aio_pron_play' | 'aio_relay_play' | 'aio_settlement'
 
   // 토스트 알림 시스템 상태
   const [toast, setToast] = useState({ visible: false, message: '', type: 'info' });
@@ -91,6 +88,12 @@ export default function App() {
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [exitCodeInput, setExitCodeInput] = useState('');
   const [exitError, setExitError] = useState('');
+
+  // 사자성어 완료 후 1초 뒤 수령대 대형 번호 안내 모달 상태
+  const [assignedBoothModal, setAssignedBoothModal] = useState({ open: false, number: null });
+
+  // 간식 수령대 2단계 상세 정산 확인 모달 상태
+  const [settlementDetailModal, setSettlementDetailModal] = useState({ open: false, student: null });
 
   // 파이어베이스 실시간 수신 상태
   const [globalParticipants, setGlobalParticipants] = useState({});
@@ -183,7 +186,7 @@ export default function App() {
     };
   }, [stationRole, deviceId]);
 
-  // 오디오 파일 앱 초기화 시 강력 사전 로딩 (Preload)
+  // 오디오 사전 로딩
   useEffect(() => {
     const audio = new Audio('/10sTimer.mp3');
     audio.preload = 'auto';
@@ -243,7 +246,7 @@ export default function App() {
     setError('');
   };
 
-  // 특정 역할(부스)에 이미 다른 기기가 접속 중인지 확인 (엄격한 1대 점유)
+  // 특정 역할(부스)에 이미 다른 기기가 접속 중인지 확인
   const isRoleOccupied = (roleToCheck) => {
     const now = Date.now();
     return Object.entries(connectedStations).some(([id, station]) => {
@@ -267,7 +270,7 @@ export default function App() {
     }
   };
 
-  // 부스별 플레이 자격 요건 검증 (앞 단계 완료 필수)
+  // 부스별 플레이 자격 요건 검증
   const canPlayStation = (student, role) => {
     if (!student) return false;
     const scores = student.scores || {};
@@ -279,7 +282,7 @@ export default function App() {
     return false;
   };
 
-  // 전체 초기화 (관리자 전용)
+  // 전체 초기화
   const handleResetAllData = () => {
     if (!userSession?.isAdmin) {
       showToast('관리자만 초기화할 수 있습니다.', 'error');
@@ -295,7 +298,7 @@ export default function App() {
     }
   };
 
-  // 1. 정보입력대: 학생 등록 (중복 검증 완벽 차단)
+  // 1. 정보입력대: 학번 + 이름 + 성별 3가지 모두 동일할 때만 중복 처리
   const handleRegisterStudent = (e) => {
     e.preventDefault();
     const cleanId = participantId.trim();
@@ -310,14 +313,14 @@ export default function App() {
       return;
     }
 
-    // 중복 검증: 이미 학번이 존재하거나, 학번+이름+성별이 동일한 학생 검사
-    const isDuplicate = Object.values(globalParticipants).some(
-      (st) => st.id === cleanId || (st.name === cleanName && st.gender === participantGender)
+    // 3가지 요소(학번, 이름, 성별)가 완전히 동일한 경우에만 중복 차단
+    const isStrictDuplicate = Object.values(globalParticipants).some(
+      (st) => st.id === cleanId && st.name === cleanName && st.gender === participantGender
     );
 
-    if (isDuplicate) {
-      showToast(`이미 등록되어 있는 학생입니다. (${cleanId} / ${cleanName})`, 'error');
-      setParticipantError('이미 등록된 학생 정보입니다.');
+    if (isStrictDuplicate) {
+      showToast(`학번, 이름, 성별이 동일한 학생이 이미 등록되어 있습니다.`, 'error');
+      setParticipantError('동일한 학생 정보가 이미 존재합니다.');
       return;
     }
 
@@ -382,7 +385,7 @@ export default function App() {
     setGameResult(resultObj);
   };
 
-  // 타이머 최종 완료 후 학생 목록으로 복귀
+  // 타이머 완료 후 복귀
   const handleCompleteTimer = () => {
     if (!selectedStudentId || !gameResult) return;
     update(ref(db, `participants/${selectedStudentId}/scores/timer`), gameResult);
@@ -392,7 +395,7 @@ export default function App() {
     setGameResult(null);
   };
 
-  // 제기차기 결과 완료 후 학생 목록으로 복귀
+  // 제기차기 완료 후 복귀
   const handleCompleteJegi = () => {
     if (!selectedStudentId) return;
     const student = globalParticipants[selectedStudentId];
@@ -411,7 +414,7 @@ export default function App() {
     setJegiCount(0);
   };
 
-  // 발음 테스트 결과 완료 후 학생 목록으로 복귀
+  // 발음 테스트 완료 후 복귀
   const handleCompletePron = (coupons, rankName) => {
     if (!selectedStudentId) return;
     update(ref(db, `participants/${selectedStudentId}/scores/pron`), {
@@ -424,7 +427,7 @@ export default function App() {
     setPronCoupons(null);
   };
 
-  // 사자성어 결과 저장 및 간식 수령대 배정 후 목록 복귀
+  // 사자성어 완료 후 1초 뒤 대형 부스 안내 팝업 출현
   const handleCompleteRelay = (isSuccess) => {
     if (!selectedStudentId) return;
     const newScore = isSuccess ? 1 : 0;
@@ -435,15 +438,12 @@ export default function App() {
       .map((s) => s.role);
 
     let assignedRole = null;
-    let toastMsg = '';
+    let boothNum = null;
 
     if (activeSettlementRoles.length > 0) {
       const randomIdx = Math.floor(Math.random() * activeSettlementRoles.length);
       assignedRole = activeSettlementRoles[randomIdx];
-      const num = assignedRole.replace('settlement_', '');
-      toastMsg = `사자성어 완료! 🎉 간식 수령대 [${num}번 창구]로 가세요!`;
-    } else {
-      toastMsg = `사자성어 완료! 수령대 기기 연결 시 간식을 수령할 수 있습니다.`;
+      boothNum = assignedRole.replace('settlement_', '');
     }
 
     update(ref(db, `participants/${selectedStudentId}/scores/relay`), {
@@ -455,18 +455,23 @@ export default function App() {
       assignedSettlement: assignedRole,
     });
 
-    showToast(toastMsg, 'success');
+    // 1초 뒤 큼지막한 수령대 안내 모달 출현
+    setTimeout(() => {
+      setAssignedBoothModal({ open: true, number: boothNum });
+    }, 1000);
+
     setSelectedStudentId('');
     setRelayScore(0);
   };
 
-  // 간식 수령 완료
-  const handleSettleSnack = (studentId) => {
+  // 간식 수령 최종 완료 처리 (처리 후 화면에서 즉시 제거)
+  const handleSettleSnackConfirm = (studentId) => {
     update(ref(db, `participants/${studentId}`), {
       settled: true,
       settledAt: Date.now(),
     });
-    showToast('간식 지급 처리가 완료되었습니다.', 'success');
+    setSettlementDetailModal({ open: false, student: null });
+    showToast('간식 수령 처리가 완료되었습니다.', 'success');
   };
 
   // 올인원 모드 제기차기 결과 계산
@@ -476,92 +481,6 @@ export default function App() {
     const coupons = isPassed ? 3 : 0;
     return { target, isPassed, coupons };
   };
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#f8fafd] flex flex-col items-center justify-center p-4 font-sans">
-        <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
-          <div className="flex flex-col items-center mb-8 text-center">
-            <div className="w-14 h-14 bg-blue-50 text-[#1a73e8] rounded-2xl flex items-center justify-center mb-4 shadow-inner">
-              <Radio size={28} />
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">YBS Helper</h1>
-            <p className="text-sm text-slate-500 mt-1">방송부 부원 신원 확인 후 접근 가능합니다.</p>
-          </div>
-
-          <form onSubmit={handleAuth} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">학년</label>
-              <div className="relative">
-                <select
-                  value={grade}
-                  onChange={handleGradeChange}
-                  className="w-full px-4 py-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl text-sm appearance-none cursor-pointer text-slate-800"
-                >
-                  <option value="">학년을 선택하세요</option>
-                  <option value="1">1학년</option>
-                  <option value="2">2학년</option>
-                  <option value="3">3학년</option>
-                </select>
-                <GraduationCap className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">이름</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => { setName(e.target.value); setError(''); }}
-                  placeholder="이름을 입력하세요"
-                  className="w-full px-4 py-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-800"
-                />
-                <User className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">인증 코드</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={inputCode}
-                  onChange={(e) => { setInputCode(e.target.value); setError(''); }}
-                  placeholder="인증 코드를 입력하세요"
-                  className="w-full px-4 py-3.5 pl-11 pr-11 bg-slate-50 border border-slate-200 rounded-2xl text-sm"
-                />
-                <KeyRound className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-3.5 text-slate-400"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="flex items-center gap-1.5 mt-2 text-xs text-red-500 ml-1">
-                <ShieldAlert size={14} />
-                <span>{error}</span>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl text-sm mt-2 cursor-pointer"
-            >
-              인증하기
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  const jegiRes = getJegiResult();
 
   // 부스 활성화 현황 집계
   const nowTime = Date.now();
@@ -589,13 +508,13 @@ export default function App() {
     <div className="min-h-screen bg-[#f8fafd] text-slate-800 font-sans relative">
       {/* 커스텀 토스트 알림 UI */}
       {toast.visible && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-5 py-3.5 bg-slate-900/90 text-white text-xs font-bold rounded-2xl shadow-2xl backdrop-blur-md border border-slate-700 transition-all animate-bounce">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-5 py-3.5 bg-slate-900/90 text-white text-xs font-bold rounded-2xl shadow-2xl backdrop-blur-md border border-slate-700 animate-bounce">
           <Info size={16} className={toast.type === 'error' ? 'text-red-400' : toast.type === 'success' ? 'text-emerald-400' : 'text-blue-400'} />
           <span>{toast.message}</span>
         </div>
       )}
 
-      {/* 헤더 (부스 진행 중일 때는 화면 상단에서 완전히 은폐) */}
+      {/* 헤더 (부스 진행 중일 때는 완전히 은폐) */}
       {activeView !== 'station_app' && (
         <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-4 sm:px-6 py-3 sm:py-4">
           <div className="max-w-5xl mx-auto flex items-center justify-between">
@@ -622,7 +541,7 @@ export default function App() {
         </header>
       )}
 
-      {/* 부스 운영 전용 탑 헤더 (학생들에게 개인정보 노출 방지 & 보안 잠금) */}
+      {/* 부스 운영 전용 탑 헤더 */}
       {activeView === 'station_app' && (
         <header className="bg-slate-900 text-white px-4 sm:px-6 py-3 border-b border-slate-800">
           <div className="max-w-5xl mx-auto flex items-center justify-between">
@@ -735,7 +654,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 완전하게 복원된 올인원 체험 모드 카드 */}
               <div
                 onClick={() => setActiveView('aio_register')}
                 className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between group"
@@ -888,7 +806,6 @@ export default function App() {
                 );
               })}
 
-              {/* 간식 수령대 1~4번 버튼 */}
               {[1, 2, 3, 4].map((num) => {
                 const roleKey = `settlement_${num}`;
                 const occupied = isRoleOccupied(roleKey);
@@ -1009,7 +926,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 2~5번 미니게임 부스: 학생 목록 선택 화면 (도전 가능자만 노출, 이미 도전한 학생은 숨김) */}
+            {/* 2~5번 미니게임 부스: 도전 가능한 학생 목록 (이미 완수한 학생은 자동 숨김) */}
             {stationRole !== 'register' && !stationRole.startsWith('settlement') && selectedStudentId === '' && (
               <div className="max-w-2xl mx-auto bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
@@ -1050,7 +967,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 2번 10초 타이머 전용 게임 창 (페이드아웃 & 타임라인 인디케이터 적용) */}
+            {/* 2번 10초 타이머 전용 게임 창 */}
             {stationRole === 'timer' && selectedStudentId !== '' && (
               <div className="max-w-md mx-auto text-center bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
                 <button
@@ -1067,7 +984,6 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* 페이드아웃 타이머 디스플레이 */}
                 <div className="h-32 flex items-center justify-center my-4 bg-slate-50 rounded-3xl border border-slate-100 relative overflow-hidden">
                   <div
                     style={{ opacity: timerOpacity, transition: 'opacity 0.05s linear' }}
@@ -1087,14 +1003,12 @@ export default function App() {
                   </button>
                 )}
 
-                {/* 정지 후 측정 결과 및 타임라인 인디케이터 바 */}
                 {gameResult && (
                   <div className="mt-6 space-y-4">
                     <div className="p-4 bg-emerald-50 text-emerald-800 rounded-2xl text-sm font-bold">
                       측정 결과: {gameResult.stoppedTime}초 ({gameResult.rank} / 간식 +{gameResult.coupons}개)
                     </div>
 
-                    {/* 타임라인 인디케이터 바 */}
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
                       <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1">
                         <span>0.00s</span>
@@ -1102,9 +1016,7 @@ export default function App() {
                         <span>12.00s</span>
                       </div>
                       <div className="h-4 bg-slate-200 rounded-full relative overflow-hidden">
-                        {/* 10초 타겟 마커 */}
                         <div className="absolute top-0 bottom-0 left-[83.33%] w-1 bg-blue-600 z-10"></div>
-                        {/* 정지 지점 인디케이터 바 */}
                         <div
                           style={{ width: `${indicatorPos}%` }}
                           className="h-full bg-emerald-500 transition-all duration-700 ease-out rounded-full"
@@ -1236,7 +1148,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 6번 간식 수령대 */}
+            {/* 6번 간식 수령대 (수령 미완료건만 단순 리스트 노출 ➔ 확인하기 누르면 상세 모달 ➔ 완료 시 숨김) */}
             {stationRole.startsWith('settlement') && (
               <div className="max-w-2xl mx-auto bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200/80">
                 <div className="text-center mb-6">
@@ -1247,17 +1159,28 @@ export default function App() {
                     간식 정산 수령대 [{stationRole.replace('settlement_', '')}번 창구]
                   </h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    학생의 종목별 결과를 확인하고 간식을 수령 처리합니다.
+                    간식 수령 대기 중인 학생 리스트입니다.
                   </p>
                 </div>
 
-                <div className="space-y-4">
-                  {Object.values(globalParticipants).length === 0 ? (
-                    <p className="text-center text-xs text-slate-400 py-10">등록된 학생이 없습니다.</p>
+                <div className="space-y-3">
+                  {Object.values(globalParticipants).filter((st) => {
+                    // 수령 완료(settled === true)된 학생은 목록에서 제거
+                    if (st.settled) return false;
+                    if (!canPlayStation(st, stationRole)) return false;
+
+                    const isOriginalAssignedAlive = activeSettlementRoles.includes(st.assignedSettlement);
+                    if (st.assignedSettlement === stationRole) return true;
+                    if (!isOriginalAssignedAlive && activeSettlementRoles[0] === stationRole) return true;
+                    return false;
+                  }).length === 0 ? (
+                    <p className="text-center text-xs text-slate-400 py-12">현재 대기 중인 학생이 없거나 모두 수령을 완료했습니다.</p>
                   ) : (
                     Object.values(globalParticipants)
                       .filter((st) => {
+                        if (st.settled) return false;
                         if (!canPlayStation(st, stationRole)) return false;
+
                         const isOriginalAssignedAlive = activeSettlementRoles.includes(st.assignedSettlement);
                         if (st.assignedSettlement === stationRole) return true;
                         if (!isOriginalAssignedAlive && activeSettlementRoles[0] === stationRole) return true;
@@ -1271,60 +1194,19 @@ export default function App() {
                         const totalC = timerC + jegiC + pronC + relayC;
 
                         return (
-                          <div key={st.id} className="p-5 bg-slate-50 rounded-3xl border border-slate-200/80 space-y-4">
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-200/60">
-                              <div>
-                                <span className="text-base font-extrabold text-slate-900">[{st.id}] {st.name}</span>
-                                <span className="text-xs text-slate-400 ml-2">({st.gender})</span>
-                              </div>
-                              {st.settled ? (
-                                <span className="px-3 py-1 bg-gray-200 text-gray-700 font-bold rounded-full text-xs">
-                                  수령 완료됨
-                                </span>
-                              ) : (
-                                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 font-bold rounded-full text-xs">
-                                  수령 대기 중
-                                </span>
-                              )}
+                          <div key={st.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between">
+                            <div>
+                              <span className="text-sm font-extrabold text-slate-900">[{st.id}] {st.name}</span>
+                              <span className="text-xs text-slate-500 ml-2">({st.gender})</span>
+                              <span className="text-xs font-bold text-amber-600 block mt-0.5">총 마이쮸 {totalC}개</span>
                             </div>
 
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-                              <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
-                                <span className="text-slate-400 font-medium block text-[10px]">⏱️ 10초 타이머</span>
-                                <span className="font-bold text-slate-800 mt-1 block">+{timerC}개</span>
-                              </div>
-                              <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
-                                <span className="text-slate-400 font-medium block text-[10px]">🦵 제기차기</span>
-                                <span className="font-bold text-slate-800 mt-1 block">+{jegiC}개</span>
-                              </div>
-                              <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
-                                <span className="text-slate-400 font-medium block text-[10px]">🗣️ 발음 테스트</span>
-                                <span className="font-bold text-slate-800 mt-1 block">+{pronC}개</span>
-                              </div>
-                              <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
-                                <span className="text-slate-400 font-medium block text-[10px]">📖 사자성어</span>
-                                <span className="font-bold text-slate-800 mt-1 block">+{relayC}개</span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-between pt-2">
-                              <div>
-                                <span className="text-xs text-slate-500 font-medium">최종 간식 수령액:</span>
-                                <span className="text-lg font-black text-amber-600 ml-1.5">마이쮸 {totalC}개</span>
-                              </div>
-
-                              <button
-                                disabled={st.settled}
-                                onClick={() => handleSettleSnack(st.id)}
-                                className={`px-5 py-3 rounded-2xl text-xs font-bold transition-all shadow-sm ${
-                                  st.settled
-                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
-                                }`}
-                              >
-                                {st.settled ? '수령 완료' : '간식 수령 확인'}
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => setSettlementDetailModal({ open: true, student: st })}
+                              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer transition-colors"
+                            >
+                              확인하기
+                            </button>
                           </div>
                         );
                       })
@@ -1335,7 +1217,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 완전히 복원된 올인원 체험 모드 전체 UI 흐름 */}
+        {/* 올인원 체험 모드 전체 UI */}
         {activeView === 'aio_register' && (
           <div className="max-w-md mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
             <button onClick={() => setActiveView('treasure_menu')} className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-6 cursor-pointer">
@@ -1401,7 +1283,6 @@ export default function App() {
             <h2 className="text-2xl font-bold text-slate-900 mb-2">타이머 결과: {gameResult.stoppedTime}초</h2>
             <p className="text-xs text-slate-500 mb-4">{gameResult.rank} 판정 (간식권 +{gameResult.coupons}개)</p>
 
-            {/* 인디케이터 바 */}
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 mb-6">
               <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1">
                 <span>0.00s</span>
@@ -1477,7 +1358,109 @@ export default function App() {
         )}
       </main>
 
-      {/* 역할 변경 이탈 보안 모달 (비밀번호 검증) */}
+      {/* 사자성어 완료 후 1초 뒤 나타나는 대형 간식수령대 이동 안내 모달 */}
+      {assignedBoothModal.open && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border border-slate-100">
+            <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-4">
+              <Gift size={32} />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-1">모든 미니게임 완료! 🎉</h3>
+            <p className="text-xs text-slate-500 mb-6">지정된 간식 수령대 창구로 이동하세요.</p>
+
+            {assignedBoothModal.number ? (
+              <div className="p-6 bg-emerald-50 border-2 border-emerald-300 rounded-3xl mb-6">
+                <span className="text-xs font-bold text-emerald-700 block mb-1">배정된 창구</span>
+                <span className="text-6xl font-black text-emerald-600 tracking-tight">
+                  {assignedBoothModal.number}번
+                </span>
+                <span className="text-xs font-bold text-emerald-700 block mt-2">간식 수령대로 이동</span>
+              </div>
+            ) : (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl mb-6 text-xs text-amber-800 font-bold">
+                현재 연결된 간식 수령대가 없어 데이터가 안전하게 저장되었습니다.
+              </div>
+            )}
+
+            <button
+              onClick={() => setAssignedBoothModal({ open: false, number: null })}
+              className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-sm cursor-pointer transition-colors shadow-sm"
+            >
+              확인하였습니다
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 간식 수령대 2단계 상세 정산 내역 모달 */}
+      {settlementDetailModal.open && settlementDetailModal.student && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  [{settlementDetailModal.student.id}] {settlementDetailModal.student.name}
+                </h3>
+                <span className="text-xs text-slate-400">{settlementDetailModal.student.gender} 학생 상세 정산 내역</span>
+              </div>
+              <button
+                onClick={() => setSettlementDetailModal({ open: false, student: null })}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-full"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-2 mb-6 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl flex justify-between">
+                <span className="text-slate-500 font-medium">⏱️ 10초 타이머</span>
+                <span className="font-bold text-slate-800">+{settlementDetailModal.student.scores?.timer?.coupons || 0}개</span>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl flex justify-between">
+                <span className="text-slate-500 font-medium">🦵 제기차기</span>
+                <span className="font-bold text-slate-800">+{settlementDetailModal.student.scores?.jegi?.coupons || 0}개</span>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl flex justify-between">
+                <span className="text-slate-500 font-medium">🗣️ 발음 테스트</span>
+                <span className="font-bold text-slate-800">+{settlementDetailModal.student.scores?.pron?.coupons || 0}개</span>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl flex justify-between">
+                <span className="text-slate-500 font-medium">📖 사자성어</span>
+                <span className="font-bold text-slate-800">+{settlementDetailModal.student.scores?.relay?.coupons || 0}개</span>
+              </div>
+
+              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200/80 flex justify-between items-center mt-3">
+                <span className="text-sm font-extrabold text-amber-900">최종 수령 마이쮸</span>
+                <span className="text-xl font-black text-amber-600">
+                  {(settlementDetailModal.student.scores?.timer?.coupons || 0) +
+                   (settlementDetailModal.student.scores?.jegi?.coupons || 0) +
+                   (settlementDetailModal.student.scores?.pron?.coupons || 0) +
+                   (settlementDetailModal.student.scores?.relay?.coupons || 0)}개
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setSettlementDetailModal({ open: false, student: null })}
+                className="py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs cursor-pointer transition-colors"
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSettleSnackConfirm(settlementDetailModal.student.id)}
+                className="py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-xs cursor-pointer transition-colors shadow-sm"
+              >
+                수령 완료 처리
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 역할 변경 이탈 보안 모달 */}
       {isExitModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-slate-100">
