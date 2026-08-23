@@ -77,6 +77,9 @@ export default function App() {
 
   // 메인 화면 및 뷰 제어 상태
   const [activeView, setActiveView] = useState('main'); 
+  // 'main' | 'treasure_menu' | 'network_menu' | 'station_app' 
+  // | 'aio_register' | 'aio_timer_guide' | 'aio_timer_play' | 'aio_timer_result'
+  // | 'aio_jegi_play' | 'aio_pron_play' | 'aio_relay_play' | 'aio_settlement'
 
   // 토스트 알림 시스템 상태
   const [toast, setToast] = useState({ visible: false, message: '', type: 'info' });
@@ -481,6 +484,93 @@ export default function App() {
     const coupons = isPassed ? 3 : 0;
     return { target, isPassed, coupons };
   };
+
+  // 방송부 부원 최초 로그인 인증 페이지 (미인증 시)
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#f8fafd] flex flex-col items-center justify-center p-4 font-sans">
+        <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-sm border border-slate-200/80">
+          <div className="flex flex-col items-center mb-8 text-center">
+            <div className="w-14 h-14 bg-blue-50 text-[#1a73e8] rounded-2xl flex items-center justify-center mb-4 shadow-inner">
+              <Radio size={28} />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">YBS Helper</h1>
+            <p className="text-sm text-slate-500 mt-1">방송부 부원 신원 확인 후 접근 가능합니다.</p>
+          </div>
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">학년</label>
+              <div className="relative">
+                <select
+                  value={grade}
+                  onChange={handleGradeChange}
+                  className="w-full px-4 py-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl text-sm appearance-none cursor-pointer text-slate-800"
+                >
+                  <option value="">학년을 선택하세요</option>
+                  <option value="1">1학년</option>
+                  <option value="2">2학년</option>
+                  <option value="3">3학년</option>
+                </select>
+                <GraduationCap className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">이름</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); setError(''); }}
+                  placeholder="이름을 입력하세요"
+                  className="w-full px-4 py-3.5 pl-11 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-800"
+                />
+                <User className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-2 ml-1">인증 코드</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={inputCode}
+                  onChange={(e) => { setInputCode(e.target.value); setError(''); }}
+                  placeholder="인증 코드를 입력하세요"
+                  className="w-full px-4 py-3.5 pl-11 pr-11 bg-slate-50 border border-slate-200 rounded-2xl text-sm"
+                />
+                <KeyRound className="absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" size={18} />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-3.5 text-slate-400"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-red-500 ml-1">
+                <ShieldAlert size={14} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full py-3.5 bg-[#1a73e8] hover:bg-blue-700 text-white font-medium rounded-2xl text-sm mt-2 cursor-pointer"
+            >
+              인증하기
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  const jegiRes = getJegiResult();
 
   // 부스 활성화 현황 집계
   const nowTime = Date.now();
@@ -1148,7 +1238,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 6번 간식 수령대 (수령 미완료건만 단순 리스트 노출 ➔ 확인하기 누르면 상세 모달 ➔ 완료 시 숨김) */}
+            {/* 6번 간식 수령대 */}
             {stationRole.startsWith('settlement') && (
               <div className="max-w-2xl mx-auto bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200/80">
                 <div className="text-center mb-6">
@@ -1165,7 +1255,6 @@ export default function App() {
 
                 <div className="space-y-3">
                   {Object.values(globalParticipants).filter((st) => {
-                    // 수령 완료(settled === true)된 학생은 목록에서 제거
                     if (st.settled) return false;
                     if (!canPlayStation(st, stationRole)) return false;
 
